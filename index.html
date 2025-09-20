@@ -1,65 +1,61 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Get today's beans — mobile</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
-    html,body{margin:0;height:100%;background:#0e1020;color:var(--ink);font-family:system-ui,Arial}
-    .page{min-height:100svh;display:grid;place-items:center;padding:8px}
-    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
-    #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
-          box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
-    .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:14px;
-         font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;z-index:2}
-    .title{position:absolute;top:-36px;left:50%;transform:translateX(-50%);opacity:.9;font-weight:700}
-    .btn{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:var(--accent);border:none;color:#fff;
-         padding:10px 16px;border-radius:999px;cursor:pointer;z-index:2}
-    /* Centered on-screen controls (overlay) */
-    .touch-controls{position:absolute;left:0;right:0;bottom:calc(10px + env(safe-area-inset-bottom,0px));
-      display:flex;justify-content:center;gap:12px;padding:0 10px;pointer-events:none;z-index:2}
-    .tc-group{display:flex;gap:12px;pointer-events:auto}
-    .tc-btn{
-      min-width:clamp(56px,14vw,76px);min-height:clamp(56px,14vw,76px);
-      border-radius:14px;border:1px solid #1b2557;background:linear-gradient(#0f1536,#0c1330);color:#cfe3ff;
-      font-weight:700;display:flex;align-items:center;justify-content:center;user-select:none;touch-action:none
-    }
-    .tc-btn:active{transform:scale(.98)}
-    .tc-fire{min-width:clamp(78px,22vw,110px)}
-    @media (prefers-reduced-motion:reduce){ .tc-btn{transition:none} }
-  </style>
+<meta charset="utf-8" />
+<title>Get today's beans — mobile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
+  html,body{margin:0;height:100%;background:#0e1020;color:var(--ink);font-family:system-ui,Arial}
+  .page{min-height:100svh;display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px}
+  .titlebar{font-weight:800;opacity:.9;text-align:center}
+  .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
+  #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
+        box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
+  .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);
+       display:flex;gap:14px;font-weight:700;background:rgba(0,0,0,.18);
+       padding:6px 10px;border-radius:999px;z-index:2}
+  /* Controls live BELOW the canvas, centered */
+  .controls{display:flex;justify-content:center;gap:12px;width:100%}
+  .tc-btn{
+    min-width:clamp(56px,14vw,76px);min-height:clamp(56px,14vw,76px);
+    border-radius:14px;border:1px solid #1b2557;background:linear-gradient(#0f1536,#0c1330);
+    color:#cfe3ff;font-weight:700;display:flex;align-items:center;justify-content:center;
+    user-select:none;touch-action:none
+  }
+  .tc-btn:active{transform:scale(.98)}
+  .tc-fire{min-width:clamp(78px,22vw,110px)}
+  .restart{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:999px;cursor:pointer}
+  @media (prefers-reduced-motion:reduce){ .tc-btn{transition:none} }
+</style>
 </head>
 <body>
   <div class="page">
+    <div class="titlebar">Get today’s beans</div>
+
+    <!-- Game area -->
     <div class="gamewrap" aria-label="Game area">
-      <div class="title">Get today’s beans</div>
       <div class="hud">
         <div>Beans: <span id="beans">0</span></div>
         <div>Lives: <span id="lives">3</span></div>
       </div>
-
       <canvas id="game" width="480" height="720" aria-label="Bjorn Beans canvas"></canvas>
-
-      <!-- Centered on-screen touch controls -->
-      <div id="touchControls" class="touch-controls">
-        <div class="tc-group">
-          <button id="btnLeft"  class="tc-btn" aria-label="Move left">⬅️</button>
-          <button id="btnRight" class="tc-btn" aria-label="Move right">➡️</button>
-        </div>
-        <div class="tc-group">
-          <button id="btnFire"  class="tc-btn tc-fire" aria-label="Fire">🔥 FIRE</button>
-        </div>
-      </div>
-
-      <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
     </div>
+
+    <!-- Centered controls BELOW the game -->
+    <div id="controls" class="controls">
+      <button id="btnLeft"  class="tc-btn" aria-label="Move left">⬅️</button>
+      <button id="btnRight" class="tc-btn" aria-label="Move right">➡️</button>
+      <button id="btnFire"  class="tc-btn tc-fire" aria-label="Fire">🔥 FIRE</button>
+    </div>
+
+    <button id="restart" class="restart" hidden>Tap/Click to Restart</button>
   </div>
 
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;        // logical game size
-const VERSION = "v11";                    // bump to bust cache on Pages
+const VERSION = "v12";                   // bump to bust cache on Pages
 const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
 
 const BASE_SHIP_HEIGHT = 120;            // base ship height (auto-scales)
@@ -72,34 +68,37 @@ const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 const BEAN_IMG_SRC  = ""; // e.g. `./bean.png?${VERSION}`
 const ALIEN_IMG_SRC = ""; // e.g. `./alien.png?${VERSION}`
 
-/* ============== Canvas (HiDPI + Responsive fit) ============== */
-// Fit by BOTH width and height so it never overflows on phones.
+/* ============== Canvas (HiDPI + Fit inc. controls) ============== */
 const c = document.getElementById('game');
 const g = c.getContext('2d');
+const controlsBar = document.getElementById('controls');
+const titleBar = document.querySelector('.titlebar');
 
 let scaleCSS = 1;
 let dpr = 1;
 
+// Fit by BOTH width and height, subtracting the controls+title space so they never overlap the canvas.
 function resizeCanvas(){
-  // leave some breathing room around the canvas & buttons
   const vw = window.innerWidth, vh = window.innerHeight;
-  const margin = 16, btnReserve = 130; // px reserved at bottom for buttons overlay
-  const availW = Math.max(320, vw - margin*2);
-  const availH = Math.max(360, vh - margin*2);
+  const margin = 16; // page padding
+  const titleH = titleBar?.getBoundingClientRect().height || 0;
+  const ctrlH  = controlsBar?.getBoundingClientRect().height || 120;
 
-  // Scale by the limiting dimension; account for buttons visually by reducing height a bit
+  const availW = Math.max(320, vw - margin*2);
+  const availH = Math.max(360, vh - margin*2 - titleH - ctrlH);
+
   const scaleByW = availW / BASE_W;
-  const scaleByH = (availH - btnReserve) / BASE_H;
-  const MIN_SCALE = 0.5, MAX_SCALE = 1.0;
+  const scaleByH = availH / BASE_H;
+  const MIN_SCALE = 0.45, MAX_SCALE = 1.0;   // tweak if you want smaller/larger on tiny phones
   scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
 
-  // CSS size
+  // CSS size only; the controls are below, so no overlay ever happens.
   const cssW = Math.round(BASE_W * scaleCSS);
   const cssH = Math.round(BASE_H * scaleCSS);
   c.style.width  = cssW + 'px';
   c.style.height = cssH + 'px';
 
-  // Backing store size (HiDPI)
+  // HiDPI backing store for sharpness
   dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   c.width  = Math.round(BASE_W * dpr);
   c.height = Math.round(BASE_H * dpr);
@@ -117,7 +116,24 @@ addEventListener('keydown', e => {
 }, {passive:false});
 addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-/* Canvas-only tap/hold shooting */
+/* On-screen buttons */
+const btnLeft  = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnFire  = document.getElementById('btnFire');
+let leftPressed = false, rightPressed = false, firePressed = false;
+function bindHold(btn, setter){
+  const down = (e)=>{ setter(true); e.preventDefault(); };
+  const up   = (e)=>{ setter(false); e.preventDefault(); };
+  btn.addEventListener('pointerdown', down, {passive:false});
+  ['pointerup','pointerleave','pointercancel','pointerout'].forEach(ev => btn.addEventListener(ev, up, {passive:false}));
+  btn.addEventListener('mousedown', down);
+  ['mouseup','mouseleave'].forEach(ev => btn.addEventListener(ev, up));
+}
+bindHold(btnLeft,  v=> leftPressed  = v);
+bindHold(btnRight, v=> rightPressed = v);
+bindHold(btnFire,  v=> firePressed  = v);
+
+/* Canvas tap/hold to fire (optional) */
 let touchActiveCanvas = false;
 c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.preventDefault(); }, { passive:false });
 ['pointerup','pointercancel','pointerleave','pointerout'].forEach(ev =>
@@ -125,25 +141,6 @@ c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.
 );
 document.addEventListener('visibilitychange', () => { if (document.hidden) touchActiveCanvas = false; });
 addEventListener('blur', () => { touchActiveCanvas = false; });
-
-/* On-screen touch buttons (centered) */
-const btnLeft  = document.getElementById('btnLeft');
-const btnRight = document.getElementById('btnRight');
-const btnFire  = document.getElementById('btnFire');
-
-let leftPressed = false, rightPressed = false, firePressed = false;
-function bindHold(btn, setter){
-  const down = (e)=>{ setter(true); e.preventDefault(); };
-  const up   = (e)=>{ setter(false); e.preventDefault(); };
-  btn.addEventListener('pointerdown', down, {passive:false});
-  ['pointerup','pointerleave','pointercancel','pointerout'].forEach(ev => btn.addEventListener(ev, up, {passive:false}));
-  // mouse fallback
-  btn.addEventListener('mousedown', down);
-  ['mouseup','mouseleave'].forEach(ev => btn.addEventListener(ev, up));
-}
-bindHold(btnLeft,  v=> leftPressed  = v);
-bindHold(btnRight, v=> rightPressed = v);
-bindHold(btnFire,  v=> firePressed  = v);
 
 /* ==================== Assets ==================== */
 const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
@@ -236,7 +233,7 @@ function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
 function update(){
   S.tick++;
 
-  // movement (keyboard + touch buttons)
+  // movement (keyboard + on-screen buttons)
   const leftKey  = keys['arrowleft'] || keys['a'];
   const rightKey = keys['arrowright']|| keys['d'];
   const move = (rightKey || rightPressed ? 1 : 0) - (leftKey || leftPressed ? 1 : 0);
@@ -310,8 +307,9 @@ addEventListener('keydown', kick);
 c.addEventListener('pointerdown', kick);
 document.getElementById('restart').addEventListener('click', start);
 
-// First layout
+// First layout (twice so controls are measurable)
 resizeCanvas();
+setTimeout(resizeCanvas, 0);
 </script>
 </body>
 </html>
