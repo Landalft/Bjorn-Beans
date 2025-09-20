@@ -2,56 +2,64 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Get today's beans — mobile</title>
+<title>Get Today's beans — mobile</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
   html,body{margin:0;height:100%;background:#0e1020;color:var(--ink);font-family:system-ui,Arial}
   .page{min-height:100svh;display:grid;place-items:center;padding:12px}
-  .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
-  #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
-        box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
-  .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:14px;
-       font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;z-index:3}
+  /* Stage = exact same size as canvas (set from JS) */
+  .stage{position:relative;display:block}
+  canvas#game{width:100%;height:100%;background:var(--card);border:2px solid var(--accent);
+    border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
+
+  /* Title + HUD inside the display */
+  .titlebar{position:absolute;top:8px;left:50%;transform:translateX(-50%);
+    font-weight:800;opacity:.95;z-index:3}
+  .hud{position:absolute;top:36px;left:50%;transform:translateX(-50%);
+    display:flex;gap:14px;font-weight:700;background:rgba(0,0,0,.18);
+    padding:6px 10px;border-radius:999px;z-index:3}
 
   /* Overlays */
   .overlay{position:absolute;inset:0;display:grid;place-items:center;z-index:5;
            color:#e6efff;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6)}
-  .overlay-bg{position:absolute;inset:0;background:linear-gradient(transparent, rgba(0,0,0,.25) 40%, rgba(0,0,0,.35))}
+  .overlay-bg{position:absolute;inset:0;border-radius:16px;
+    background:linear-gradient(transparent, rgba(0,0,0,.25) 40%, rgba(0,0,0,.35))}
   .start .pill{position:relative;background:rgba(0,0,0,.35);border:1px solid #1b2557;border-radius:999px;
                padding:10px 16px;font-weight:800}
   .winbox{position:relative;background:rgba(0,0,0,.45);border:1px solid #1b2557;border-radius:16px;
-          padding:12px 12px 14px;display:flex;flex-direction:column;gap:8px;align-items:center}
-  .winbox img{max-width:min(78vw, 360px);height:auto;border-radius:12px;display:block}
-  .winbox figcaption{margin-top:4px;font-weight:800;letter-spacing:.3px}
+          padding:12px;display:flex;flex-direction:column;gap:10px;align-items:center}
+  .winbox img{max-width:88%;max-height:48vh;height:auto;border-radius:12px;display:block}
+  .winbox figcaption{font-weight:800;letter-spacing:.3px}
   .btn{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:999px;cursor:pointer}
 
   .hidden{display:none !important;}
 
-  /* Controls INSIDE the display (bottom-center) */
+  /* Controls inside the display (bottom-center) */
   .touch-controls{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;
                   gap:12px;padding:0 10px;pointer-events:none;z-index:3}
   .tc-group{display:flex;gap:12px;pointer-events:auto}
   .tc-btn{
-    min-width:clamp(52px,13vw,72px);min-height:clamp(52px,13vw,72px);
+    min-width:clamp(50px,13vw,70px);min-height:clamp(50px,13vw,70px);
     border-radius:14px;border:1px solid #1b2557;background:linear-gradient(#0f1536,#0c1330);
     color:#cfe3ff;font-weight:700;display:flex;align-items:center;justify-content:center;
     user-select:none;touch-action:none
   }
   .tc-btn:active{transform:scale(.98)}
-  .tc-fire{min-width:clamp(74px,21vw,106px)}
+  .tc-fire{min-width:clamp(72px,20vw,102px)}
   @media (prefers-reduced-motion:reduce){ .tc-btn{transition:none} }
 </style>
 </head>
 <body>
   <div class="page">
-    <div class="gamewrap" aria-label="Game area">
+    <!-- Stage matches canvas size exactly -->
+    <div id="stage" class="stage" aria-label="Game area">
+      <div class="titlebar">Get Today’s beans</div>
       <div class="hud">
         <div>Beans: <span id="beans">0</span></div>
         <div>Lives: <span id="lives">3</span></div>
       </div>
 
-      <!-- Canvas -->
       <canvas id="game" width="480" height="720" aria-label="Bjorn Beans canvas"></canvas>
 
       <!-- Start overlay -->
@@ -85,12 +93,14 @@
 
 <script>
 /* ==================== CONFIG ==================== */
-const BASE_W = 480, BASE_H = 720;          // logical game size
-const VERSION = "v14";                      // bump to bust cache on Pages
-const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
-const WIN_GIF_SRC   = `./well-done.gif?${VERSION}`; // <-- upload this file
+const BASE_W = 480, BASE_H = 720;                // logical game size
+const VERSION = "v15";                            // bump to bust cache on Pages
+const PLAYER_IMG_FILE = "ship.png";               // your ship image file
+const WIN_GIF_FILE    = "beans.gif";          // your GIF file name (exact case!)
+const PLAYER_IMG_SRC  = `./${PLAYER_IMG_FILE}?v=${VERSION}`;
+const WIN_GIF_BASE    = `./${WIN_GIF_FILE}?v=${VERSION}`; // timestamp added on win to replay
 
-const BASE_SHIP_HEIGHT = 112;               // slightly smaller
+const BASE_SHIP_HEIGHT = 108;                     // slightly smaller by default
 const BASE_BEAN_W = 22, BASE_BEAN_H = 34;
 const ENEMY_BASE_W = 24, ENEMY_BASE_H = 20;
 const ENEMY_SCALE  = 1.45;
@@ -100,7 +110,8 @@ const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 const BEAN_IMG_SRC  = "";
 const ALIEN_IMG_SRC = "";
 
-/* ============== Canvas (HiDPI + responsive) ============== */
+/* ============== Canvas (HiDPI + responsive fit) ============== */
+const stage = document.getElementById('stage');
 const c = document.getElementById('game');
 const g = c.getContext('2d');
 const touchControls = document.getElementById('touchControls');
@@ -111,30 +122,33 @@ const playAgainBtn  = document.getElementById('playAgain');
 
 let scaleCSS = 1, dpr = 1, SAFE_BOTTOM = 100;
 
-/** Fit canvas by both width & height, then reserve bottom area for in-canvas controls */
+/** Fit by BOTH width & height; stage size == canvas CSS size */
 function resizeCanvas(){
   const vw = window.innerWidth, vh = window.innerHeight;
   const margin = 12;
   const availW = Math.max(320, vw - margin*2);
   const availH = Math.max(360, vh - margin*2);
 
+  // make it smaller by default; allow very small phones
   const scaleByW = availW / BASE_W;
   const scaleByH = availH / BASE_H;
-  const MIN_SCALE = 0.40, MAX_SCALE = 0.90;   // overall smaller feel
+  const MIN_SCALE = 0.35, MAX_SCALE = 0.85;     // smaller & fits more aggressively
   scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
 
   const cssW = Math.round(BASE_W * scaleCSS);
   const cssH = Math.round(BASE_H * scaleCSS);
-  c.style.width  = cssW + 'px';
-  c.style.height = cssH + 'px';
+  stage.style.width  = cssW + 'px';
+  stage.style.height = cssH + 'px';
+  // canvas follows stage 100% via CSS
 
-  dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap DPR for perf
   c.width  = Math.round(BASE_W * dpr);
   c.height = Math.round(BASE_H * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  // controls height in CSS px -> convert to logical px of the game
   const ctrlH_css = touchControls.getBoundingClientRect().height || 110;
-  SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8;
+  SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8; // padding
 
   recalcSpriteSizes();
 }
@@ -242,8 +256,10 @@ function endGame(){ S.running = false; startOverlay.classList.remove('hidden'); 
 /* Show "win" overlay (after clearing all aliens) */
 function showWin(){
   S.running = false;
-  winGifEl.src = WIN_GIF_SRC;
-  winGifEl.onerror = () => { winGifEl.style.display = 'none'; }; // if GIF missing, just show caption/button
+  // Force GIF to (re)load and replay using timestamp cache-bust
+  winGifEl.style.display = '';
+  winGifEl.src = WIN_GIF_BASE + "&t=" + Date.now();
+  winGifEl.onerror = () => { winGifEl.style.display = 'none'; };
   winOverlay.classList.remove('hidden');
 }
 
@@ -318,7 +334,7 @@ function update(){
   }
   S.enemies = S.enemies.filter(e => e.alive);
 
-  // WIN: when all aliens are gone, show the GIF overlay instead of spawning a new wave
+  // WIN: when all aliens are gone, show GIF overlay (no auto next wave)
   if (S.enemies.length === 0 && S.running) { showWin(); }
 }
 
@@ -361,8 +377,8 @@ playAgainBtn.addEventListener('click', () => {
   start();
 });
 
-// Set GIF source now (so cache-busting applies even before first win)
-winGifEl.src = WIN_GIF_SRC;
+// Preload GIF once (helpful on slow networks)
+winGifEl.src = WIN_GIF_BASE;
 </script>
 </body>
 </html>
