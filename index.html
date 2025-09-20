@@ -8,7 +8,7 @@
   :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
   html,body{margin:0;height:100%;background:#0e1020;color:var(--ink);font-family:system-ui,Arial}
   .page{min-height:100svh;display:grid;place-items:center;padding:12px}
-  /* Stage = exact same size as canvas (set from JS) */
+  /* Stage = same CSS size as the canvas, set from JS */
   .stage{position:relative;display:block}
   canvas#game{width:100%;height:100%;background:var(--card);border:2px solid var(--accent);
     border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
@@ -54,7 +54,7 @@
   <div class="page">
     <!-- Stage matches canvas size exactly -->
     <div id="stage" class="stage" aria-label="Game area">
-      <div class="titlebar">Get Today’s beans</div>
+      <div class="titlebar">Get Today's beans</div>
       <div class="hud">
         <div>Beans: <span id="beans">0</span></div>
         <div>Lives: <span id="lives">3</span></div>
@@ -94,9 +94,9 @@
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;                // logical game size
-const VERSION = "v15";                            // bump to bust cache on Pages
-const PLAYER_IMG_FILE = "ship.png";               // your ship image file
-const WIN_GIF_FILE    = "beans.gif";          // your GIF file name (exact case!)
+const VERSION = "v16";                            // bump to bust cache on Pages
+const PLAYER_IMG_FILE = "ship.png";               // your ship image
+const WIN_GIF_FILE    = "well-done.gif";          // your GIF file name (exact case!)
 const PLAYER_IMG_SRC  = `./${PLAYER_IMG_FILE}?v=${VERSION}`;
 const WIN_GIF_BASE    = `./${WIN_GIF_FILE}?v=${VERSION}`; // timestamp added on win to replay
 
@@ -120,7 +120,10 @@ const winOverlay    = document.getElementById('winOverlay');
 const winGifEl      = document.getElementById('winGif');
 const playAgainBtn  = document.getElementById('playAgain');
 
-let scaleCSS = 1, dpr = 1, SAFE_BOTTOM = 100;
+const titleEl = document.querySelector('.titlebar');
+const hudEl   = document.querySelector('.hud');
+
+let scaleCSS = 1, dpr = 1, SAFE_BOTTOM = 100, SAFE_TOP = 0;
 
 /** Fit by BOTH width & height; stage size == canvas CSS size */
 function resizeCanvas(){
@@ -129,26 +132,30 @@ function resizeCanvas(){
   const availW = Math.max(320, vw - margin*2);
   const availH = Math.max(360, vh - margin*2);
 
-  // make it smaller by default; allow very small phones
+  // smaller by default; fits aggressively on tiny phones
   const scaleByW = availW / BASE_W;
   const scaleByH = availH / BASE_H;
-  const MIN_SCALE = 0.35, MAX_SCALE = 0.85;     // smaller & fits more aggressively
+  const MIN_SCALE = 0.35, MAX_SCALE = 0.85;
   scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
 
   const cssW = Math.round(BASE_W * scaleCSS);
   const cssH = Math.round(BASE_H * scaleCSS);
+
   stage.style.width  = cssW + 'px';
   stage.style.height = cssH + 'px';
-  // canvas follows stage 100% via CSS
 
   dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap DPR for perf
   c.width  = Math.round(BASE_W * dpr);
   c.height = Math.round(BASE_H * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // controls height in CSS px -> convert to logical px of the game
-  const ctrlH_css = touchControls.getBoundingClientRect().height || 110;
+  // Convert control/title/hud CSS heights into logical game pixels
+  const ctrlH_css  = touchControls.getBoundingClientRect().height || 110;
+  const titleH_css = titleEl?.getBoundingClientRect().height || 0;
+  const hudH_css   = hudEl?.getBoundingClientRect().height   || 0;
+
   SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8; // padding
+  SAFE_TOP    = Math.round(((titleH_css + hudH_css + 10) / cssH) * BASE_H); // +10 logical px padding
 
   recalcSpriteSizes();
 }
@@ -274,7 +281,10 @@ function spawnWave(){
   const gapX = Math.round(16 * scaleCSS), gapY = Math.round(14 * scaleCSS);
   const totalW = ENEMY_COLS * ALIEN_W + (ENEMY_COLS-1)*gapX;
   const startX = Math.max(10, (BASE_W - totalW)/2);
-  const startY = 70;
+
+  // Start below title + HUD area (SAFE_TOP), with a minimum fallback
+  const startY = Math.max(SAFE_TOP + 16, 110);
+
   for (let r=0;r<ENEMY_ROWS;r++){
     for (let cc=0; cc<ENEMY_COLS; cc++){
       S.enemies.push({
@@ -369,7 +379,7 @@ function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame
 /* ==================== Boot ==================== */
 function start(){ reset(); loop(); }
 resizeCanvas();               // size once
-setTimeout(resizeCanvas, 0);  // size again after layout (controls measured)
+setTimeout(resizeCanvas, 0);  // size again after layout (controls/title/hud measured)
 
 /* Play again handler */
 playAgainBtn.addEventListener('click', () => {
@@ -377,7 +387,7 @@ playAgainBtn.addEventListener('click', () => {
   start();
 });
 
-// Preload GIF once (helpful on slow networks)
+// Preload GIF once (helps on slow networks)
 winGifEl.src = WIN_GIF_BASE;
 </script>
 </body>
