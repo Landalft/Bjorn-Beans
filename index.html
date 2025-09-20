@@ -2,38 +2,127 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Bjorn Beans – Tiny Galaxy Shooter</title>
+  <title>Get today's beans — Bjorn Beans</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html,body{margin:0;height:100%;background:#0e1020;color:#fff;font-family:system-ui,Arial}
-    #wrap{display:grid;place-items:center;height:100%}
-    canvas{background:#0c1330;border:2px solid #3b82f6;border-radius:16px;box-shadow:0 12px 30px rgba(0,0,0,.4)}
-    .hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:18px;font-weight:700}
-    .btn{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:#3b82f6;border:none;color:#fff;
-         padding:10px 16px;border-radius:999px;cursor:pointer}
-    .tip{position:fixed;bottom:14px;right:14px;opacity:.75;font-size:12px}
+    :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
+    html,body{margin:0;background:#0e1020;color:var(--ink);font-family:system-ui,Segoe UI,Arial}
+    header.topbar{padding:14px 16px;text-align:center;border-bottom:1px solid #1b2557;background:#0f1536;
+      position:sticky;top:0;z-index:2}
+    header.topbar h1{margin:0;font-size:clamp(18px,3.2vw,28px);letter-spacing:.3px}
+    main.layout{display:grid;grid-template-columns:1fr 240px;gap:16px;max-width:980px;margin:14px auto;padding:0 12px}
+    /* Left column: game */
+    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
+    canvas{background:var(--card);border:2px solid var(--accent);border-radius:16px;
+      box-shadow:0 12px 30px rgba(0,0,0,.4)}
+    .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+      display:flex;gap:18px;font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px}
+    .btn{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:var(--accent);border:none;color:#fff;
+      padding:10px 16px;border-radius:999px;cursor:pointer}
+    .tip{position:absolute;bottom:10px;right:10px;opacity:.75;font-size:12px}
+    /* Right column: GIF */
+    aside.sidebar{background:#0b112a;border:1px solid #1b2557;border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:10px}
+    .sidegif{width:100%;height:auto;object-fit:contain;border-radius:12px;display:block}
+    .sidecap{font-size:12px;opacity:.8;text-align:center}
+
+    /* Mobile: stack */
+    @media (max-width: 720px){
+      main.layout{grid-template-columns:1fr}
+      .tip{display:none}
+    }
+    /* Respect users who prefer less motion: hide the GIF */
+    @media (prefers-reduced-motion: reduce){
+      .sidegif{display:none}
+      .sidecap{display:none}
+    }
   </style>
 </head>
 <body>
-  <div class="hud"><div>Score: <span id="score">0</span></div><div>Lives: <span id="lives">3</span></div></div>
-  <div id="wrap"><canvas id="game" width="480" height="720"></canvas></div>
-  <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
-  <div class="tip">Move: ← → or A/D • Shoot: Space / Tap</div>
+  <header class="topbar"><h1>Get today’s beans</h1></header>
+
+  <main class="layout">
+    <!-- LEFT: Game -->
+    <section class="gamewrap">
+      <div class="hud">
+        <div>Beans: <span id="beans">0</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+      </div>
+      <canvas id="game" width="480" height="720" aria-label="Bjorn Beans game area"></canvas>
+      <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
+      <div class="tip">Move: ← → or A/D • Shoot: Space / Tap</div>
+    </section>
+
+    <!-- RIGHT: GIF panel -->
+    <aside class="sidebar" aria-label="Beans of the day">
+      <!-- Upload beans.gif next to index.html, or change the src to any https GIF -->
+      <img class="sidegif" src="./beans.gif" alt="Animated beans" />
+      <div class="sidecap">Beans of the day ✨</div>
+    </aside>
+  </main>
 
 <script>
-/* ================== CONFIG ================== */
-/* 1) Ship image (upload ship.png to repo root or change the path below) */
-const PLAYER_IMG_SRC = "./ship.png";
-/* Set the display height we want (aspect ratio preserved automatically) */
-const SHIP_TARGET_HEIGHT = 110; // make the can bigger by bumping this number
+/* ---------------- CONFIG ---------------- */
+const W = 480, H = 720;                // logical canvas size
+const VERSION = "v4";                  // bump to bust caches on Pages
+const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
+const SHIP_TARGET_HEIGHT = 120;        // bigger ship, aspect ratio preserved
 
-/* 2) Bean bullets (bigger) */
-const BEAN_IMG_SRC = ""; // set to "./bean.png" if you upload your own PNG
-const BEAN_W = 22, BEAN_H = 34; // bigger beans
+const BEAN_IMG_SRC = "";               // set to "./bean.png?${VERSION}" if you add a file
+const BEAN_W = 24, BEAN_H = 36;        // bigger beans
 
-/* 3) Alien targets (built-in SVG; you can swap to ./alien.png if you prefer) */
-const ALIEN_IMG_SRC = ""; // set to "./alien.png" if you upload one
-const ALIEN_SVG = `
+const ALIEN_IMG_SRC = "";              // set to "./alien.png?${VERSION}" to use a file
+const ENEMY_SCALE = 1.5;
+const ENEMY_COLS = 7, ENEMY_ROWS = 3;
+
+/* ---------------- Canvas setup (HiDPI safe) ---------------- */
+const c = document.getElementById('game');
+const g = c.getContext('2d');
+function setupCanvasDPR(canvas, width, height){
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  canvas.width  = width  * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width  = width + 'px';
+  canvas.style.height = height + 'px';
+  g.setTransform(dpr,0,0,dpr,0,0);
+}
+setupCanvasDPR(c, W, H);
+
+/* ---------------- Inputs ---------------- */
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.code === 'Space') e.preventDefault();
+}, {passive:false});
+addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
+
+let pointerDown = false;
+addEventListener('pointerdown', ()=> { pointerDown = true; });
+addEventListener('pointerup',   ()=> { pointerDown = false; });
+
+/* ---------------- Assets ---------------- */
+const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
+let shipReady = false, shipW = 64, shipH = 64;
+shipImg.onload = () => {
+  shipReady = true;
+  const iw = shipImg.naturalWidth || 64, ih = shipImg.naturalHeight || 64;
+  const s  = SHIP_TARGET_HEIGHT / ih;        // uniform scale → keeps aspect ratio
+  shipW = Math.round(iw * s); shipH = Math.round(ih * s);
+};
+
+const beanImg = new Image();
+const beanDataSVG = `
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
+  <defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+    <stop offset='0' stop-color='#7b3f00'/><stop offset='1' stop-color='#b5651d'/>
+  </linearGradient></defs>
+  <ellipse cx='16' cy='24' rx='10' ry='16' fill='url(#g)'/>
+  <ellipse cx='12' cy='16' rx='4' ry='6' fill='rgba(255,255,255,0.25)'/>
+</svg>`;
+beanImg.src = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(beanDataSVG));
+let beanReady = false; beanImg.onload = ()=> beanReady = true;
+
+const alienImg = new Image();
+const alienSVG = `
 <svg xmlns='http://www.w3.org/2000/svg' width='24' height='20' viewBox='0 0 24 20'>
   <rect width='24' height='20' fill='none'/>
   <rect x='2' y='4' width='4' height='2' fill='#7fffd4'/>
@@ -44,94 +133,45 @@ const ALIEN_SVG = `
   <rect x='8' y='8' width='2' height='2' fill='#001122'/>
   <rect x='14' y='8' width='2' height='2' fill='#001122'/>
 </svg>`;
-const ENEMY_SCALE = 1.4;   // scale aliens up (bigger targets)
-const ENEMY_COLS  = 7;
-const ENEMY_ROWS  = 3;
+alienImg.src = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(alienSVG));
+let alienReady = false, alienW = Math.round(24*ENEMY_SCALE), alienH = Math.round(20*ENEMY_SCALE);
+alienImg.onload = ()=> { alienReady = true; };
 
-/* ============= setup & utilities ============ */
-const c = document.getElementById('game'), g = c.getContext('2d');
-const scoreEl = document.getElementById('score'), livesEl = document.getElementById('lives');
+/* ---------------- Game state ---------------- */
+const beansEl = document.getElementById('beans');
+const livesEl = document.getElementById('lives');
 const restartBtn = document.getElementById('restart');
 
-const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
-let keys = {};
-addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
-addEventListener('keyup',   e=> keys[e.key.toLowerCase()] = false);
-let pointerDown = false;
-addEventListener('pointerdown', ()=> { pointerDown = true; });
-addEventListener('pointerup',   ()=> { pointerDown = false; });
-
-/* ================ assets ==================== */
-const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
-let shipReady = false, shipW = 64, shipH = 64;
-shipImg.onload = () => {
-  shipReady = true;
-  // preserve aspect ratio using the image's intrinsic size
-  const scale = SHIP_TARGET_HEIGHT / (shipImg.naturalHeight || SHIP_TARGET_HEIGHT);
-  shipW = Math.round((shipImg.naturalWidth  || SHIP_TARGET_HEIGHT) * scale);
-  shipH = Math.round((shipImg.naturalHeight || SHIP_TARGET_HEIGHT) * scale);
-};
-
-const beanImg = new Image();
-const beanURL = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(`
-<svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
-  <defs>
-    <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
-      <stop offset='0' stop-color='#7b3f00'/>
-      <stop offset='1' stop-color='#b5651d'/>
-    </linearGradient>
-  </defs>
-  <ellipse cx='16' cy='24' rx='10' ry='16' fill='url(#g)'/>
-  <ellipse cx='12' cy='16' rx='4' ry='6' fill='rgba(255,255,255,0.25)'/>
-</svg>`));
-beanImg.src = beanURL;
-let beanReady = false; beanImg.onload = ()=> beanReady = true;
-
-const alienImg = new Image();
-const alienURL = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(ALIEN_SVG));
-alienImg.src = alienURL;
-let alienReady = false, alienW = 32, alienH = 26;
-alienImg.onload = () => {
-  alienReady = true;
-  alienW = Math.round((alienImg.naturalWidth  || 24) * ENEMY_SCALE);
-  alienH = Math.round((alienImg.naturalHeight || 20) * ENEMY_SCALE);
-  // if a wave already exists, resize current enemies
-  for (const e of S.enemies){ e.w = alienW; e.h = alienH; }
-};
-
-/* ================ game state ================ */
 const S = {
-  running:false, score:0, lives:3, tick:0,
-  player: { x:c.width/2, y:680, w:shipW, h:shipH, speed:4.2, cooldown:0 },
+  running:false, beans:0, lives:3, tick:0,
+  player: { x:W/2, y:H-80, w:shipW, h:shipH, speed:4.2, cooldown:0 },
   bullets: [],
   enemies: [],
 };
 
 function reset(){
-  S.running = true; S.score = 0; S.lives = 3; S.tick = 0;
-  S.player.x = c.width/2; S.player.y = 680; S.player.cooldown = 0;
+  S.running = true; S.beans = 0; S.lives = 3; S.tick = 0;
+  S.player.x = W/2; S.player.y = H-80; S.player.cooldown = 0;
   S.player.w = shipW; S.player.h = shipH;
   S.bullets.length = 0; S.enemies.length = 0;
   spawnWave();
-  scoreEl.textContent = S.score; livesEl.textContent = S.lives;
+  beansEl.textContent = S.beans; livesEl.textContent = S.lives;
   restartBtn.hidden = true;
 }
 function endGame(){ S.running = false; restartBtn.hidden = false; }
 
-/* ================ entities ================== */
+/* ---------------- Entities ---------------- */
 function shoot(){
   if (S.player.cooldown > 0) return;
   S.bullets.push({ x:S.player.x - BEAN_W/2, y:S.player.y - S.player.h/2 - BEAN_H + 6, vy:-8, w:BEAN_W, h:BEAN_H });
-  S.player.cooldown = 8; // faster rate
+  S.player.cooldown = 8;
 }
-
 function spawnWave(){
-  // center the alien grid based on current alien size
   const gapX = 16, gapY = 14;
   const totalW = ENEMY_COLS * alienW + (ENEMY_COLS-1)*gapX;
-  const startX = Math.max(10, (c.width - totalW)/2);
+  const startX = Math.max(10, (W - totalW)/2);
   const startY = 80;
-  for (let r=0; r<ENEMY_ROWS; r++){
+  for (let r=0;r<ENEMY_ROWS;r++){
     for (let cc=0; cc<ENEMY_COLS; cc++){
       S.enemies.push({
         x: startX + cc*(alienW + gapX),
@@ -144,12 +184,12 @@ function spawnWave(){
   }
 }
 
-/* ================ collisions ================ */
+/* ---------------- Collisions ---------------- */
 function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
   return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
 }
 
-/* ================== loop ==================== */
+/* ---------------- Loop ---------------- */
 function update(){
   S.tick++;
 
@@ -158,7 +198,7 @@ function update(){
   const right= keys['arrowright']|| keys['d'];
   const shootKey = keys[' '] || keys['space'];
   const move = (right?1:0) - (left?1:0);
-  S.player.x = clamp(S.player.x + move * S.player.speed, S.player.w/2, c.width - S.player.w/2);
+  S.player.x = Math.max(S.player.w/2, Math.min(W - S.player.w/2, S.player.x + move * S.player.speed));
 
   if (pointerDown) shoot();
   if (shootKey) shoot();
@@ -168,7 +208,7 @@ function update(){
   for(const b of S.bullets){ b.y += b.vy; }
   S.bullets = S.bullets.filter(b => b.y > -60);
 
-  // swarm movement (sinusoidal + slow descent)
+  // swarm (sinusoidal + descent)
   const amp = 22 + Math.min(S.tick/10, 46);
   const speed = 0.5 + Math.min(S.tick/600, 1.2);
   for (const e of S.enemies){
@@ -178,13 +218,13 @@ function update(){
     if (e.y + e.h >= S.player.y - 6) { S.lives = 0; livesEl.textContent = S.lives; endGame(); }
   }
 
-  // bullet vs alien
+  // hits
   for (const b of S.bullets){
     for (const e of S.enemies){
       if (!e.alive) continue;
       if (rectHit(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
         e.alive = false; b.y = -9999;
-        S.score += 10; scoreEl.textContent = S.score;
+        S.beans += 10; beansEl.textContent = S.beans;
       }
     }
   }
@@ -194,23 +234,19 @@ function update(){
 }
 
 function draw(){
-  g.clearRect(0,0,c.width,c.height);
+  g.clearRect(0,0,W,H);
 
   // starfield
   g.globalAlpha = .2; g.fillStyle = "#8fb3ff";
-  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%c.width, (i*97 + S.tick*0.9)%c.height, 2,2); }
+  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%W, (i*97 + S.tick*0.9)%H, 2,2); }
   g.globalAlpha = 1;
 
-  // ship (image) with aspect respected
+  // ship
   const p = S.player;
-  if (shipReady){
-    g.drawImage(shipImg, p.x - p.w/2, p.y - p.h/2, p.w, p.h);
-  } else {
-    g.fillStyle = "#97e4ff";
-    g.beginPath(); g.moveTo(p.x, p.y-shipH/2); g.lineTo(p.x-shipW/2, p.y+shipH/2); g.lineTo(p.x+shipW/2, p.y+shipH/2); g.closePath(); g.fill();
-  }
+  if (shipReady){ g.drawImage(shipImg, p.x - p.w/2, p.y - p.h/2, p.w, p.h); }
+  else { g.fillStyle = "#97e4ff"; g.beginPath(); g.moveTo(p.x, p.y-24); g.lineTo(p.x-20, p.y+22); g.lineTo(p.x+20, p.y+22); g.closePath(); g.fill(); }
 
-  // bean bullets
+  // beans
   for (const b of S.bullets){
     if (beanReady){ g.drawImage(beanImg, b.x, b.y, b.w, b.h); }
     else { g.fillStyle = "#ffd166"; g.fillRect(b.x, b.y, b.w, b.h); }
@@ -225,12 +261,12 @@ function draw(){
 
 function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
 
-/* =============== boot =============== */
+/* ---------------- Boot ---------------- */
 function start(){ reset(); loop(); }
 const kick = () => { if (!S.running) start(); };
 addEventListener('keydown', kick);
 addEventListener('pointerdown', kick);
-restartBtn.addEventListener('click', ()=> { start(); });
+restartBtn.addEventListener('click', start);
 </script>
 </body>
 </html>
