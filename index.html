@@ -13,12 +13,19 @@
         box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
   .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:14px;
        font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;z-index:3}
-  /* Start overlay */
-  .start{position:absolute;inset:0;display:grid;place-items:center;z-index:4;
-         color:#e6efff;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.6);
-         background:linear-gradient(transparent, rgba(0,0,0,.20) 40%, transparent)}
-  .start > .pill{background:rgba(0,0,0,.35);border:1px solid #1b2557;border-radius:999px;
-                 padding:10px 16px}
+
+  /* Overlays */
+  .overlay{position:absolute;inset:0;display:grid;place-items:center;z-index:5;
+           color:#e6efff;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.6)}
+  .overlay-bg{position:absolute;inset:0;background:linear-gradient(transparent, rgba(0,0,0,.25) 40%, rgba(0,0,0,.35))}
+  .start .pill{position:relative;background:rgba(0,0,0,.35);border:1px solid #1b2557;border-radius:999px;
+               padding:10px 16px;font-weight:800}
+  .winbox{position:relative;background:rgba(0,0,0,.45);border:1px solid #1b2557;border-radius:16px;
+          padding:12px 12px 14px;display:flex;flex-direction:column;gap:8px;align-items:center}
+  .winbox img{max-width:min(78vw, 360px);height:auto;border-radius:12px;display:block}
+  .winbox figcaption{margin-top:4px;font-weight:800;letter-spacing:.3px}
+  .btn{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:999px;cursor:pointer}
+
   .hidden{display:none !important;}
 
   /* Controls INSIDE the display (bottom-center) */
@@ -48,8 +55,19 @@
       <canvas id="game" width="480" height="720" aria-label="Bjorn Beans canvas"></canvas>
 
       <!-- Start overlay -->
-      <div id="startOverlay" class="start">
+      <div id="startOverlay" class="overlay start">
+        <div class="overlay-bg"></div>
         <div class="pill">Click here to start</div>
+      </div>
+
+      <!-- Win overlay (GIF + footer + play again) -->
+      <div id="winOverlay" class="overlay hidden" aria-live="polite">
+        <div class="overlay-bg"></div>
+        <figure class="winbox">
+          <img id="winGif" src="" alt="Well done animation" />
+          <figcaption>Well done!!</figcaption>
+          <button id="playAgain" class="btn">Play again</button>
+        </figure>
       </div>
 
       <!-- Controls INSIDE the display -->
@@ -68,28 +86,30 @@
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;          // logical game size
-const VERSION = "v13";                      // bump to bust cache on Pages
+const VERSION = "v14";                      // bump to bust cache on Pages
 const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
+const WIN_GIF_SRC   = `./well-done.gif?${VERSION}`; // <-- upload this file
 
-const BASE_SHIP_HEIGHT = 112;               // a touch smaller by default
-const BASE_BEAN_W = 22, BASE_BEAN_H = 34;   // slightly smaller too
+const BASE_SHIP_HEIGHT = 112;               // slightly smaller
+const BASE_BEAN_W = 22, BASE_BEAN_H = 34;
 const ENEMY_BASE_W = 24, ENEMY_BASE_H = 20;
 const ENEMY_SCALE  = 1.45;
 const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 
-// Optional external images (leave "" to use built-in SVGs)
-const BEAN_IMG_SRC  = ""; // e.g. `./bean.png?${VERSION}`
-const ALIEN_IMG_SRC = ""; // e.g. `./alien.png?${VERSION}`
+/* Optional external images (leave "" to use built-in SVGs) */
+const BEAN_IMG_SRC  = "";
+const ALIEN_IMG_SRC = "";
 
 /* ============== Canvas (HiDPI + responsive) ============== */
 const c = document.getElementById('game');
 const g = c.getContext('2d');
 const touchControls = document.getElementById('touchControls');
 const startOverlay  = document.getElementById('startOverlay');
+const winOverlay    = document.getElementById('winOverlay');
+const winGifEl      = document.getElementById('winGif');
+const playAgainBtn  = document.getElementById('playAgain');
 
-let scaleCSS = 1;
-let dpr = 1;
-let SAFE_BOTTOM = 100; // logical px reserved for controls (auto-calculated)
+let scaleCSS = 1, dpr = 1, SAFE_BOTTOM = 100;
 
 /** Fit canvas by both width & height, then reserve bottom area for in-canvas controls */
 function resizeCanvas(){
@@ -98,27 +118,23 @@ function resizeCanvas(){
   const availW = Math.max(320, vw - margin*2);
   const availH = Math.max(360, vh - margin*2);
 
-  // smaller by default on phones
   const scaleByW = availW / BASE_W;
   const scaleByH = availH / BASE_H;
-  const MIN_SCALE = 0.40, MAX_SCALE = 0.90; // <- overall smaller feel
+  const MIN_SCALE = 0.40, MAX_SCALE = 0.90;   // overall smaller feel
   scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
 
-  // apply CSS size
   const cssW = Math.round(BASE_W * scaleCSS);
   const cssH = Math.round(BASE_H * scaleCSS);
   c.style.width  = cssW + 'px';
   c.style.height = cssH + 'px';
 
-  // HiDPI backing store (draw in BASE_W×BASE_H units)
   dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   c.width  = Math.round(BASE_W * dpr);
   c.height = Math.round(BASE_H * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // compute SAFE_BOTTOM from the *visual* controls height
-  const ctrlH_css = touchControls.getBoundingClientRect().height || 110; // in CSS px
-  SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8;             // convert to logical px + padding
+  const ctrlH_css = touchControls.getBoundingClientRect().height || 110;
+  SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8;
 
   recalcSpriteSizes();
 }
@@ -132,12 +148,12 @@ addEventListener('keydown', e => {
 }, {passive:false});
 addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-/* Start overlay click/key */
+/* Start overlay actions */
 function hideStart(){ startOverlay.classList.add('hidden'); }
 startOverlay.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (!S.running) { hideStart(); start(); } }, {passive:false});
-addEventListener('keydown', (e)=>{ if (!S.running) { hideStart(); start(); }});
+addEventListener('keydown', (e)=>{ if (!S.running && !startOverlay.classList.contains('hidden')) { hideStart(); start(); }});
 
-/* Canvas tap/hold shooting (optional too) */
+/* Canvas tap/hold shooting */
 let touchActiveCanvas = false;
 c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.preventDefault(); }, { passive:false });
 ['pointerup','pointercancel','pointerleave','pointerout'].forEach(ev =>
@@ -146,7 +162,7 @@ c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.
 document.addEventListener('visibilitychange', () => { if (document.hidden) touchActiveCanvas = false; });
 addEventListener('blur', () => { touchActiveCanvas = false; });
 
-/* On-screen buttons (inside display) */
+/* On-screen buttons */
 const btnLeft  = document.getElementById('btnLeft');
 const btnRight = document.getElementById('btnRight');
 const btnFire  = document.getElementById('btnFire');
@@ -206,21 +222,30 @@ const beansEl = document.getElementById('beans');
 const livesEl = document.getElementById('lives');
 
 const S = {
-  running:false, beans:0, lives:3, tick:0,
+  running:false, beans:0, lives:3, tick:0, wave:0,
   player: { x:BASE_W/2, y:BASE_H-80, w:shipW, h:shipH, speed:4.2, cooldown:0 },
   bullets: [],
   enemies: [],
 };
 
 function reset(){
-  S.running = true; S.beans = 0; S.lives = 3; S.tick = 0;
+  S.running = true; S.beans = 0; S.lives = 3; S.tick = 0; S.wave = 0;
   S.player.x = BASE_W/2; S.player.cooldown = 0;
-  recalcSpriteSizes(); // also sets player.y above controls
+  recalcSpriteSizes(); // sets player.y above controls
   S.bullets.length = 0; S.enemies.length = 0;
   spawnWave();
   beansEl.textContent = S.beans; livesEl.textContent = S.lives;
+  winOverlay.classList.add('hidden');
 }
 function endGame(){ S.running = false; startOverlay.classList.remove('hidden'); }
+
+/* Show "win" overlay (after clearing all aliens) */
+function showWin(){
+  S.running = false;
+  winGifEl.src = WIN_GIF_SRC;
+  winGifEl.onerror = () => { winGifEl.style.display = 'none'; }; // if GIF missing, just show caption/button
+  winOverlay.classList.remove('hidden');
+}
 
 /* ==================== Entities ==================== */
 function shoot(){
@@ -229,10 +254,11 @@ function shoot(){
   S.player.cooldown = 8;
 }
 function spawnWave(){
+  S.wave++;
   const gapX = Math.round(16 * scaleCSS), gapY = Math.round(14 * scaleCSS);
   const totalW = ENEMY_COLS * ALIEN_W + (ENEMY_COLS-1)*gapX;
   const startX = Math.max(10, (BASE_W - totalW)/2);
-  const startY = 70; // a touch higher for more space
+  const startY = 70;
   for (let r=0;r<ENEMY_ROWS;r++){
     for (let cc=0; cc<ENEMY_COLS; cc++){
       S.enemies.push({
@@ -291,7 +317,9 @@ function update(){
     }
   }
   S.enemies = S.enemies.filter(e => e.alive);
-  if (S.enemies.length === 0) spawnWave();
+
+  // WIN: when all aliens are gone, show the GIF overlay instead of spawning a new wave
+  if (S.enemies.length === 0 && S.running) { showWin(); }
 }
 
 function draw(){
@@ -318,9 +346,6 @@ function draw(){
     if (alienReady){ g.drawImage(alienImg, e.x, e.y, e.w, e.h); }
     else { g.fillStyle = "#7fffd4"; g.fillRect(e.x, e.y, e.w, e.h); }
   }
-
-  // (Optional) visualize safe bottom area:
-  // g.fillStyle = "rgba(255,255,255,.03)"; g.fillRect(0, BASE_H - SAFE_BOTTOM, BASE_W, SAFE_BOTTOM);
 }
 
 function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
@@ -329,6 +354,15 @@ function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame
 function start(){ reset(); loop(); }
 resizeCanvas();               // size once
 setTimeout(resizeCanvas, 0);  // size again after layout (controls measured)
+
+/* Play again handler */
+playAgainBtn.addEventListener('click', () => {
+  winOverlay.classList.add('hidden');
+  start();
+});
+
+// Set GIF source now (so cache-busting applies even before first win)
+winGifEl.src = WIN_GIF_SRC;
 </script>
 </body>
 </html>
