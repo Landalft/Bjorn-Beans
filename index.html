@@ -14,7 +14,389 @@
     main.layout{display:grid;grid-template-columns:1fr 240px;gap:16px;max-width:980px;margin:14px auto;padding:0 12px}
 
     /* Game area */
+    .gamewrap{position:relative;display:flex;align-items:center;justify-content:ce<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Get today's beans — Bjorn Beans</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
+    html,body{margin:0;background:#0e1020;color:var(--ink);font-family:system-ui,Segoe UI,Arial}
+    header.topbar{padding:14px 16px;text-align:center;border-bottom:1px solid #1b2557;background:#0f1536;
+      position:sticky;top:0;z-index:3}
+    header.topbar h1{margin:0;font-size:clamp(18px,3.2vw,28px);letter-spacing:.3px}
+
+    main.layout{display:grid;grid-template-columns:1fr 240px;gap:16px;max-width:980px;margin:14px auto;padding:0 12px}
+
+    /* Game area */
     .gamewrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:540px}
+    #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
+      box-shadow:0 12px 30px rgba(0,0,0,.4); touch-action:none;} /* keep touches for the game */
+    .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);
+      display:flex;gap:18px;font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;z-index:2}
+    .btn{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:var(--accent);border:none;color:#fff;
+      padding:10px 16px;border-radius:999px;cursor:pointer;z-index:2}
+    .tip{position:absolute;bottom:10px;right:10px;opacity:.75;font-size:12px;z-index:2}
+
+    /* On-screen touch controls (centered) */
+    .touch-controls{
+      position:absolute;left:0;right:0;bottom:16px;display:flex;justify-content:center;
+      gap:12px;padding:0 10px;pointer-events:none;z-index:2;
+    }
+    .tc-group{display:flex;gap:12px;pointer-events:auto}
+    .tc-btn{
+      min-width:clamp(56px, 14vw, 76px);
+      min-height:clamp(56px, 14vw, 76px);
+      border-radius:14px;border:1px solid #1b2557;
+      background:linear-gradient(#0f1536,#0c1330);color:#cfe3ff;font-weight:700;
+      display:flex;align-items:center;justify-content:center;
+      user-select:none;touch-action:none; /* don’t let browser scroll/zoom here */
+    }
+    .tc-btn:active{transform:scale(.98)}
+    .tc-fire{min-width:clamp(78px, 22vw, 110px)}
+
+    /* Sidebar */
+    aside.sidebar{background:#0b112a;border:1px solid #1b2557;border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:10px}
+    .sidegif{width:100%;height:auto;object-fit:contain;border-radius:12px;display:block;
+      /* keep GIF small on phones via max-height clamp */
+      max-height:clamp(120px, 24vh, 220px);
+    }
+    .sidecap{font-size:12px;opacity:.8;text-align:center}
+
+    /* Mobile: stack & ensure everything fits */
+    @media (max-width: 720px){
+      main.layout{grid-template-columns:1fr}
+      .tip{display:none}
+      .gamewrap{min-height:auto}
+    }
+    /* Respect users who prefer less motion: hide the GIF */
+    @media (prefers-reduced-motion: reduce){
+      .sidegif{display:none}
+      .sidecap{display:none}
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar"><h1>Get today’s beans</h1></header>
+
+  <main class="layout">
+    <!-- LEFT: Game -->
+    <section class="gamewrap" aria-label="Game area">
+      <div class="hud">
+        <div>Beans: <span id="beans">0</span></div>
+        <div>Lives: <span id="lives">3</span></div>
+      </div>
+
+      <canvas id="game" width="480" height="720" aria-label="Bjorn Beans game canvas"></canvas>
+
+      <!-- On-screen touch controls (centered) -->
+      <div id="touchControls" class="touch-controls" aria-hidden="false">
+        <div class="tc-group">
+          <button id="btnLeft"  class="tc-btn" aria-label="Move left">⬅️</button>
+          <button id="btnRight" class="tc-btn" aria-label="Move right">➡️</button>
+        </div>
+        <div class="tc-group">
+          <button id="btnFire"  class="tc-btn tc-fire" aria-label="Fire">🔥 FIRE</button>
+        </div>
+      </div>
+
+      <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
+      <div class="tip">Move: ← → or A/D • Shoot: Space / Tap</div>
+    </section>
+
+    <!-- RIGHT: GIF panel -->
+    <aside class="sidebar" aria-label="Beans of the day">
+      <img class="sidegif" src="./beans.gif" alt="Animated beans" />
+      <div class="sidecap">Beans of the day ✨</div>
+    </aside>
+  </main>
+
+<script>
+/* ==================== CONFIG ==================== */
+const BASE_W = 480, BASE_H = 720;        // logical game size
+const VERSION = "v9";                    // bump to bust caches on Pages
+const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
+
+const BASE_SHIP_HEIGHT = 120;            // base ship height (auto-scales)
+const BASE_BEAN_W = 24, BASE_BEAN_H = 36;
+const ENEMY_BASE_W = 24, ENEMY_BASE_H = 20;
+const ENEMY_SCALE  = 1.5;
+const ENEMY_COLS = 7, ENEMY_ROWS = 3;
+
+// Optional external images (leave "" to use built-in SVGs)
+const BEAN_IMG_SRC  = ""; // e.g. `./bean.png?${VERSION}`
+const ALIEN_IMG_SRC = ""; // e.g. `./alien.png?${VERSION}`
+
+/* ============== Canvas (HiDPI + Responsive) ============== */
+// HiDPI trick: draw in CSS pixels, back the canvas with DPR-sized bitmap. (web.dev) 
+// We'll also scale to fit *both* width and height on phones. :contentReference[oaicite:0]{index=0}
+const c = document.getElementById('game');
+const g = c.getContext('2d');
+
+let scaleCSS = 1;
+let dpr = 1;
+
+function measure(el){ return el ? el.getBoundingClientRect() : {width:0,height:0}; }
+
+function resizeCanvas(){
+  const headerH   = measure(document.querySelector('header.topbar')).height;
+  const controlsH = measure(document.getElementById('touchControls')).height || 120; // estimate if 0
+  const margins   = 24 + 12; // layout padding + gap
+
+  // Available CSS size for the canvas
+  const availW = Math.max(320, Math.min(window.innerWidth - 24, BASE_W));
+  const availH = Math.max(360, window.innerHeight - headerH - controlsH - margins);
+
+  // Desired scale by width and height; clamp to sensible range
+  const scaleByW = availW / BASE_W;
+  const scaleByH = availH / BASE_H;
+  const MIN_SCALE = 0.55, MAX_SCALE = 1.00;
+  scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
+
+  // Apply CSS size
+  const cssW = Math.round(BASE_W * scaleCSS);
+  const cssH = Math.round(BASE_H * scaleCSS);
+  c.style.width  = cssW + 'px';
+  c.style.height = cssH + 'px';
+
+  // Backing store size = CSS * DPR (cap DPR for perf)
+  dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // MDN devicePixelRatio :contentReference[oaicite:1]{index=1}
+  c.width  = Math.round(BASE_W * dpr);
+  c.height = Math.round(BASE_H * dpr);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  recalcSpriteSizes();
+}
+window.addEventListener('resize', resizeCanvas);
+
+/* ==================== Inputs ==================== */
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.code === 'Space') e.preventDefault(); // avoid page scroll on Space
+}, {passive:false});
+addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
+
+/* Canvas-only tap/hold shooting */
+let touchActiveCanvas = false;
+// Pointer Events unify mouse/touch; keep gestures local to canvas. (MDN) :contentReference[oaicite:2]{index=2}
+c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.preventDefault(); }, { passive:false });
+['pointerup','pointercancel','pointerleave','pointerout'].forEach(ev =>
+  c.addEventListener(ev, () => { touchActiveCanvas = false; })
+);
+document.addEventListener('visibilitychange', () => { if (document.hidden) touchActiveCanvas = false; });
+window.addEventListener('blur', () => { touchActiveCanvas = false; });
+
+/* On-screen touch buttons (centered) */
+const btnLeft  = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnFire  = document.getElementById('btnFire');
+
+let leftPressed = false, rightPressed = false, firePressed = false;
+
+function bindHold(btn, setter){
+  const down = (e)=>{ setter(true); e.preventDefault(); };
+  const up   = (e)=>{ setter(false); e.preventDefault(); };
+  btn.addEventListener('pointerdown', down, {passive:false});
+  ['pointerup','pointerleave','pointercancel','pointerout'].forEach(ev => btn.addEventListener(ev, up, {passive:false}));
+  // mouse fallback
+  btn.addEventListener('mousedown', down);
+  ['mouseup','mouseleave'].forEach(ev => btn.addEventListener(ev, up));
+}
+bindHold(btnLeft,  v=> leftPressed  = v);
+bindHold(btnRight, v=> rightPressed = v);
+bindHold(btnFire,  v=> firePressed  = v);
+
+/* ==================== Assets ==================== */
+const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
+let shipReady = false, shipW = 64, shipH = 64, shipNatural = {w:64,h:64};
+shipImg.onload = () => { shipReady = true; shipNatural.w = shipImg.naturalWidth||64; shipNatural.h = shipImg.naturalHeight||64; recalcSpriteSizes(); };
+
+const beanImg = new Image();
+const beanDataSVG = `
+<svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
+  <defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+    <stop offset='0' stop-color='#7b3f00'/><stop offset='1' stop-color='#b5651d'/>
+  </linearGradient></defs>
+  <ellipse cx='16' cy='24' rx='10' ry='16' fill='url(#g)'/>
+  <ellipse cx='12' cy='16' rx='4' ry='6' fill='rgba(255,255,255,0.25)'/>
+</svg>`;
+beanImg.src = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(beanDataSVG));
+let beanReady = false; beanImg.onload = ()=> beanReady = true;
+
+const alienImg = new Image();
+const alienSVG = `
+<svg xmlns='http://www.w3.org/2000/svg' width='24' height='20' viewBox='0 0 24 20'>
+  <rect width='24' height='20' fill='none'/>
+  <rect x='2' y='4' width='4' height='2' fill='#7fffd4'/>
+  <rect x='18' y='4' width='4' height='2' fill='#7fffd4'/>
+  <rect x='4' y='6' width='16' height='6' fill='#7fffd4'/>
+  <rect x='6' y='12' width='4' height='2' fill='#7fffd4'/>
+  <rect x='14' y='12' width='4' height='2' fill='#7fffd4'/>
+  <rect x='8' y='8' width='2' height='2' fill='#001122'/>
+  <rect x='14' y='8' width='2' height='2' fill='#001122'/>
+</svg>`;
+alienImg.src = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(alienSVG));
+let alienReady = false; alienImg.onload = ()=> { alienReady = true; };
+
+/* ============== Dynamic sprite sizing ============== */
+let BEAN_W = BASE_BEAN_W, BEAN_H = BASE_BEAN_H;
+let ALIEN_W = Math.round(ENEMY_BASE_W * ENEMY_SCALE), ALIEN_H = Math.round(ENEMY_BASE_H * ENEMY_SCALE);
+
+function recalcSpriteSizes(){
+  const shipTargetH = Math.round(BASE_SHIP_HEIGHT * scaleCSS);
+  const s = shipTargetH / (shipNatural.h || BASE_SHIP_HEIGHT);
+  shipW = Math.max(24, Math.round((shipNatural.w || BASE_SHIP_HEIGHT) * s));
+  shipH = Math.max(24, Math.round((shipNatural.h || BASE_SHIP_HEIGHT) * s));
+
+  BEAN_W = Math.max(10, Math.round(BASE_BEAN_W * scaleCSS));
+  BEAN_H = Math.max(16, Math.round(BASE_BEAN_H * scaleCSS));
+
+  const alienBaseW = ENEMY_BASE_W * ENEMY_SCALE;
+  const alienBaseH = ENEMY_BASE_H * ENEMY_SCALE;
+  ALIEN_W = Math.max(16, Math.round(alienBaseW * scaleCSS));
+  ALIEN_H = Math.max(12, Math.round(alienBaseH * scaleCSS));
+
+  S.player.w = shipW; S.player.h = shipH;
+}
+
+/* ==================== Game state ==================== */
+const beansEl = document.getElementById('beans');
+const livesEl = document.getElementById('lives');
+const restartBtn = document.getElementById('restart');
+
+const S = {
+  running:false, beans:0, lives:3, tick:0,
+  player: { x:BASE_W/2, y:BASE_H-80, w:shipW, h:shipH, speed:4.2, cooldown:0 },
+  bullets: [],
+  enemies: [],
+};
+
+function reset(){
+  S.running = true; S.beans = 0; S.lives = 3; S.tick = 0;
+  S.player.x = BASE_W/2; S.player.y = BASE_H-80; S.player.cooldown = 0;
+  S.player.w = shipW; S.player.h = shipH;
+  S.bullets.length = 0; S.enemies.length = 0;
+  spawnWave();
+  beansEl.textContent = S.beans; livesEl.textContent = S.lives;
+  restartBtn.hidden = true;
+}
+function endGame(){ S.running = false; restartBtn.hidden = false; }
+
+/* ==================== Entities ==================== */
+function shoot(){
+  if (S.player.cooldown > 0) return;
+  S.bullets.push({ x:S.player.x - BEAN_W/2, y:S.player.y - S.player.h/2 - BEAN_H + 6, vy:-8, w:BEAN_W, h:BEAN_H });
+  S.player.cooldown = 8;
+}
+function spawnWave(){
+  const gapX = Math.round(16 * scaleCSS), gapY = Math.round(14 * scaleCSS);
+  const totalW = ENEMY_COLS * ALIEN_W + (ENEMY_COLS-1)*gapX;
+  const startX = Math.max(10, (BASE_W - totalW)/2);
+  const startY = 80;
+  for (let r=0;r<ENEMY_ROWS;r++){
+    for (let cc=0; cc<ENEMY_COLS; cc++){
+      S.enemies.push({
+        x: startX + cc*(ALIEN_W + gapX),
+        y: startY + r*(ALIEN_H + gapY),
+        w: ALIEN_W, h: ALIEN_H, alive: true,
+        baseX: startX + cc*(ALIEN_W + gapX),
+        baseY: startY + r*(ALIEN_H + gapY),
+      });
+    }
+  }
+}
+
+/* ==================== Collisions ==================== */
+function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
+  return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+}
+
+/* ==================== Loop ==================== */
+function update(){
+  S.tick++;
+
+  // input (keyboard + on-screen buttons)
+  const leftKey  = keys['arrowleft'] || keys['a'];
+  const rightKey = keys['arrowright']|| keys['d'];
+  const move = (rightKey || rightPressed ? 1 : 0) - (leftKey || leftPressed ? 1 : 0);
+  S.player.x = Math.max(S.player.w/2, Math.min(BASE_W - S.player.w/2, S.player.x + move * S.player.speed));
+
+  const shootKey = keys[' '] || keys['space'];
+  if (touchActiveCanvas || firePressed || shootKey) shoot();
+  if (S.player.cooldown>0) S.player.cooldown--;
+
+  // bullets
+  for(const b of S.bullets){ b.y += b.vy; }
+  S.bullets = S.bullets.filter(b => b.y > -60);
+
+  // swarm (sinusoidal + descent)
+  const amp = 22 + Math.min(S.tick/10, 46);
+  const speed = 0.5 + Math.min(S.tick/600, 1.2);
+  for (const e of S.enemies){
+    const phase = (e.baseX + e.baseY)*0.01;
+    e.x = e.baseX + Math.sin(S.tick*0.03 + phase)*amp;
+    e.y = e.baseY + Math.sin(S.tick*0.015 + phase*0.7)*4 + (S.tick*0.02*speed);
+    if (e.y + e.h >= S.player.y - 6) { S.lives = 0; livesEl.textContent = S.lives; endGame(); }
+  }
+
+  // hits
+  for (const b of S.bullets){
+    for (const e of S.enemies){
+      if (!e.alive) continue;
+      if (rectHit(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
+        e.alive = false; b.y = -9999;
+        S.beans += 10; beansEl.textContent = S.beans;
+      }
+    }
+  }
+  S.enemies = S.enemies.filter(e => e.alive);
+  if (S.enemies.length === 0) spawnWave();
+}
+
+function draw(){
+  g.clearRect(0,0,BASE_W,BASE_H);
+
+  // starfield
+  g.globalAlpha = .2; g.fillStyle = "#8fb3ff";
+  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%BASE_W, (i*97 + S.tick*0.9)%BASE_H, 2,2); }
+  g.globalAlpha = 1;
+
+  // ship
+  const p = S.player;
+  if (shipReady){ g.drawImage(shipImg, p.x - p.w/2, p.y - p.h/2, p.w, p.h); }
+  else { g.fillStyle = "#97e4ff"; g.beginPath(); g.moveTo(p.x, p.y-24); g.lineTo(p.x-20, p.y+22); g.lineTo(p.x+20, p.y+22); g.closePath(); g.fill(); }
+
+  // beans
+  for (const b of S.bullets){
+    if (beanReady){ g.drawImage(beanImg, b.x, b.y, b.w, b.h); }
+    else { g.fillStyle = "#ffd166"; g.fillRect(b.x, b.y, b.w, b.h); }
+  }
+
+  // aliens
+  for (const e of S.enemies){
+    if (alienReady){ g.drawImage(alienImg, e.x, e.y, e.w, e.h); }
+    else { g.fillStyle = "#7fffd4"; g.fillRect(e.x, e.y, e.w, e.h); }
+  }
+}
+
+function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
+
+/* ==================== Boot ==================== */
+function start(){ reset(); loop(); }
+const kick = () => { if (!S.running) start(); };
+addEventListener('keydown', kick);
+c.addEventListener('pointerdown', kick);
+document.getElementById('restart').addEventListener('click', start);
+
+// Initial sizing (do it twice so controls are measured once they render)
+resizeCanvas();
+setTimeout(resizeCanvas, 0);
+</script>
+</body>
+</html>
+nter;min-height:540px}
     #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
       box-shadow:0 12px 30px rgba(0,0,0,.4); touch-action:none;} /* mobile: keep touches for game */
     .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);
@@ -359,3 +741,4 @@ resizeCanvas();
 </script>
 </body>
 </html>
+
