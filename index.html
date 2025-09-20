@@ -10,17 +10,20 @@
     header.topbar{padding:14px 16px;text-align:center;border-bottom:1px solid #1b2557;background:#0f1536;
       position:sticky;top:0;z-index:2}
     header.topbar h1{margin:0;font-size:clamp(18px,3.2vw,28px);letter-spacing:.3px}
+
     main.layout{display:grid;grid-template-columns:1fr 240px;gap:16px;max-width:980px;margin:14px auto;padding:0 12px}
-    /* Left column: game */
-    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
-    canvas{background:var(--card);border:2px solid var(--accent);border-radius:16px;
-      box-shadow:0 12px 30px rgba(0,0,0,.4)}
+
+    /* Game area */
+    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:720px}
+    #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
+      box-shadow:0 12px 30px rgba(0,0,0,.4); touch-action:none;} /* mobile fix */
     .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);
       display:flex;gap:18px;font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px}
     .btn{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:var(--accent);border:none;color:#fff;
       padding:10px 16px;border-radius:999px;cursor:pointer}
     .tip{position:absolute;bottom:10px;right:10px;opacity:.75;font-size:12px}
-    /* Right column: GIF */
+
+    /* Sidebar */
     aside.sidebar{background:#0b112a;border:1px solid #1b2557;border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:10px}
     .sidegif{width:100%;height:auto;object-fit:contain;border-radius:12px;display:block}
     .sidecap{font-size:12px;opacity:.8;text-align:center}
@@ -29,6 +32,7 @@
     @media (max-width: 720px){
       main.layout{grid-template-columns:1fr}
       .tip{display:none}
+      .gamewrap{min-height:auto}
     }
     /* Respect users who prefer less motion: hide the GIF */
     @media (prefers-reduced-motion: reduce){
@@ -42,12 +46,12 @@
 
   <main class="layout">
     <!-- LEFT: Game -->
-    <section class="gamewrap">
+    <section class="gamewrap" aria-label="Game area">
       <div class="hud">
         <div>Beans: <span id="beans">0</span></div>
         <div>Lives: <span id="lives">3</span></div>
       </div>
-      <canvas id="game" width="480" height="720" aria-label="Bjorn Beans game area"></canvas>
+      <canvas id="game" width="480" height="720" aria-label="Bjorn Beans game canvas"></canvas>
       <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
       <div class="tip">Move: ← → or A/D • Shoot: Space / Tap</div>
     </section>
@@ -61,54 +65,68 @@
   </main>
 
 <script>
-/* ---------------- CONFIG ---------------- */
-const W = 480, H = 720;                // logical canvas size
-const VERSION = "v4";                  // bump to bust caches on Pages
-const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
-const SHIP_TARGET_HEIGHT = 120;        // bigger ship, aspect ratio preserved
+/* ==================== CONFIG ==================== */
+const W = 480, H = 720;                    // logical canvas size (CSS pixels)
+const VERSION = "v6";                      // bump this when you deploy to bust cache
+const PLAYER_IMG_SRC = `./ship.png?${VERSION}`; // your ship (PNG/JPG)
+const SHIP_TARGET_HEIGHT = 120;            // bigger ship; aspect ratio preserved
 
-const BEAN_IMG_SRC = "";               // set to "./bean.png?${VERSION}" if you add a file
-const BEAN_W = 24, BEAN_H = 36;        // bigger beans
+// Bean bullets: built-in SVG by default; set to "./bean.png?${VERSION}" to use a file
+const BEAN_IMG_SRC = "";
+const BEAN_W = 24, BEAN_H = 36;            // bigger beans
 
-const ALIEN_IMG_SRC = "";              // set to "./alien.png?${VERSION}" to use a file
-const ENEMY_SCALE = 1.5;
+// Aliens: built-in SVG by default; set to "./alien.png?${VERSION}" to use a file
+const ALIEN_IMG_SRC = "";
+const ENEMY_SCALE = 1.5;                   // scale aliens
 const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 
-/* ---------------- Canvas setup (HiDPI safe) ---------------- */
+/* ============== Canvas (HiDPI-safe) ============== */
 const c = document.getElementById('game');
 const g = c.getContext('2d');
-function setupCanvasDPR(canvas, width, height){
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+(function setupCanvasDPR(canvas, width, height){
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap at 2 for perf
   canvas.width  = width  * dpr;
   canvas.height = height * dpr;
   canvas.style.width  = width + 'px';
   canvas.style.height = height + 'px';
-  g.setTransform(dpr,0,0,dpr,0,0);
-}
-setupCanvasDPR(c, W, H);
+  g.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
+})(c, W, H);
 
-/* ---------------- Inputs ---------------- */
+/* ==================== Inputs ==================== */
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.key.toLowerCase()] = true;
-  if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'Space') e.preventDefault(); // prevent page scroll
 }, {passive:false});
 addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-let pointerDown = false;
-addEventListener('pointerdown', ()=> { pointerDown = true; });
-addEventListener('pointerup',   ()=> { pointerDown = false; });
+// --- Touch/pointer: canvas-only to avoid auto-firing on phones ---
+let touchActive = false;
+c.addEventListener('pointerdown', (e) => {
+  touchActive = true;
+  shoot();                // tap shoots once
+  e.preventDefault();
+}, { passive:false });
+['pointerup','pointercancel','pointerleave'].forEach(ev =>
+  c.addEventListener(ev, () => { touchActive = false; })
+);
+// Safety: if tab loses focus, stop firing
+document.addEventListener('visibilitychange', () => { if (document.hidden) touchActive = false; });
+window.addEventListener('blur', () => { touchActive = false; });
 
-/* ---------------- Assets ---------------- */
+/* ==================== Assets ==================== */
+// Ship (your image), keep aspect ratio using natural size
 const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
 let shipReady = false, shipW = 64, shipH = 64;
 shipImg.onload = () => {
   shipReady = true;
   const iw = shipImg.naturalWidth || 64, ih = shipImg.naturalHeight || 64;
-  const s  = SHIP_TARGET_HEIGHT / ih;        // uniform scale → keeps aspect ratio
-  shipW = Math.round(iw * s); shipH = Math.round(ih * s);
+  const s  = SHIP_TARGET_HEIGHT / ih;  // uniform scale → preserves aspect ratio
+  shipW = Math.round(iw * s);
+  shipH = Math.round(ih * s);
 };
 
+// Bean bullet image (inline SVG by default)
 const beanImg = new Image();
 const beanDataSVG = `
 <svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
@@ -121,6 +139,7 @@ const beanDataSVG = `
 beanImg.src = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(beanDataSVG));
 let beanReady = false; beanImg.onload = ()=> beanReady = true;
 
+// Alien image (inline SVG by default)
 const alienImg = new Image();
 const alienSVG = `
 <svg xmlns='http://www.w3.org/2000/svg' width='24' height='20' viewBox='0 0 24 20'>
@@ -137,7 +156,7 @@ alienImg.src = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent
 let alienReady = false, alienW = Math.round(24*ENEMY_SCALE), alienH = Math.round(20*ENEMY_SCALE);
 alienImg.onload = ()=> { alienReady = true; };
 
-/* ---------------- Game state ---------------- */
+/* ==================== Game state ==================== */
 const beansEl = document.getElementById('beans');
 const livesEl = document.getElementById('lives');
 const restartBtn = document.getElementById('restart');
@@ -160,7 +179,7 @@ function reset(){
 }
 function endGame(){ S.running = false; restartBtn.hidden = false; }
 
-/* ---------------- Entities ---------------- */
+/* ==================== Entities ==================== */
 function shoot(){
   if (S.player.cooldown > 0) return;
   S.bullets.push({ x:S.player.x - BEAN_W/2, y:S.player.y - S.player.h/2 - BEAN_H + 6, vy:-8, w:BEAN_W, h:BEAN_H });
@@ -184,12 +203,12 @@ function spawnWave(){
   }
 }
 
-/* ---------------- Collisions ---------------- */
+/* ==================== Collisions ==================== */
 function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
   return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
 }
 
-/* ---------------- Loop ---------------- */
+/* ==================== Loop ==================== */
 function update(){
   S.tick++;
 
@@ -200,7 +219,7 @@ function update(){
   const move = (right?1:0) - (left?1:0);
   S.player.x = Math.max(S.player.w/2, Math.min(W - S.player.w/2, S.player.x + move * S.player.speed));
 
-  if (pointerDown) shoot();
+  if (touchActive) shoot();
   if (shootKey) shoot();
   if (S.player.cooldown>0) S.player.cooldown--;
 
@@ -261,12 +280,12 @@ function draw(){
 
 function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
 
-/* ---------------- Boot ---------------- */
+/* ==================== Boot ==================== */
 function start(){ reset(); loop(); }
 const kick = () => { if (!S.running) start(); };
 addEventListener('keydown', kick);
-addEventListener('pointerdown', kick);
-restartBtn.addEventListener('click', start);
+c.addEventListener('pointerdown', kick); // start only from canvas for mobile sanity
+document.getElementById('restart').addEventListener('click', start);
 </script>
 </body>
 </html>
