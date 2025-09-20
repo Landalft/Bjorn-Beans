@@ -7,102 +7,118 @@
 <style>
   :root{--card:#0c1330;--accent:#3b82f6;--ink:#fff}
   html,body{margin:0;height:100%;background:#0e1020;color:var(--ink);font-family:system-ui,Arial}
-  .page{min-height:100svh;display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px}
-  .titlebar{font-weight:800;opacity:.9;text-align:center}
+  .page{min-height:100svh;display:grid;place-items:center;padding:12px}
   .gamewrap{position:relative;display:flex;align-items:center;justify-content:center}
   #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
         box-shadow:0 12px 30px rgba(0,0,0,.4);touch-action:none}
-  .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);
-       display:flex;gap:14px;font-weight:700;background:rgba(0,0,0,.18);
-       padding:6px 10px;border-radius:999px;z-index:2}
-  /* Controls live BELOW the canvas, centered */
-  .controls{display:flex;justify-content:center;gap:12px;width:100%}
+  .hud{position:absolute;top:8px;left:50%;transform:translateX(-50%);display:flex;gap:14px;
+       font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px;z-index:3}
+  /* Start overlay */
+  .start{position:absolute;inset:0;display:grid;place-items:center;z-index:4;
+         color:#e6efff;font-weight:800;text-shadow:0 2px 6px rgba(0,0,0,.6);
+         background:linear-gradient(transparent, rgba(0,0,0,.20) 40%, transparent)}
+  .start > .pill{background:rgba(0,0,0,.35);border:1px solid #1b2557;border-radius:999px;
+                 padding:10px 16px}
+  .hidden{display:none !important;}
+
+  /* Controls INSIDE the display (bottom-center) */
+  .touch-controls{position:absolute;left:0;right:0;bottom:10px;display:flex;justify-content:center;
+                  gap:12px;padding:0 10px;pointer-events:none;z-index:3}
+  .tc-group{display:flex;gap:12px;pointer-events:auto}
   .tc-btn{
-    min-width:clamp(56px,14vw,76px);min-height:clamp(56px,14vw,76px);
+    min-width:clamp(52px,13vw,72px);min-height:clamp(52px,13vw,72px);
     border-radius:14px;border:1px solid #1b2557;background:linear-gradient(#0f1536,#0c1330);
     color:#cfe3ff;font-weight:700;display:flex;align-items:center;justify-content:center;
     user-select:none;touch-action:none
   }
   .tc-btn:active{transform:scale(.98)}
-  .tc-fire{min-width:clamp(78px,22vw,110px)}
-  .restart{background:var(--accent);border:none;color:#fff;padding:10px 16px;border-radius:999px;cursor:pointer}
+  .tc-fire{min-width:clamp(74px,21vw,106px)}
   @media (prefers-reduced-motion:reduce){ .tc-btn{transition:none} }
 </style>
 </head>
 <body>
   <div class="page">
-    <div class="titlebar">Get today’s beans</div>
-
-    <!-- Game area -->
     <div class="gamewrap" aria-label="Game area">
       <div class="hud">
         <div>Beans: <span id="beans">0</span></div>
         <div>Lives: <span id="lives">3</span></div>
       </div>
+
+      <!-- Canvas -->
       <canvas id="game" width="480" height="720" aria-label="Bjorn Beans canvas"></canvas>
-    </div>
 
-    <!-- Centered controls BELOW the game -->
-    <div id="controls" class="controls">
-      <button id="btnLeft"  class="tc-btn" aria-label="Move left">⬅️</button>
-      <button id="btnRight" class="tc-btn" aria-label="Move right">➡️</button>
-      <button id="btnFire"  class="tc-btn tc-fire" aria-label="Fire">🔥 FIRE</button>
-    </div>
+      <!-- Start overlay -->
+      <div id="startOverlay" class="start">
+        <div class="pill">Click here to start</div>
+      </div>
 
-    <button id="restart" class="restart" hidden>Tap/Click to Restart</button>
+      <!-- Controls INSIDE the display -->
+      <div id="touchControls" class="touch-controls">
+        <div class="tc-group">
+          <button id="btnLeft"  class="tc-btn" aria-label="Move left">⬅️</button>
+          <button id="btnRight" class="tc-btn" aria-label="Move right">➡️</button>
+        </div>
+        <div class="tc-group">
+          <button id="btnFire"  class="tc-btn tc-fire" aria-label="Fire">🔥 FIRE</button>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
 /* ==================== CONFIG ==================== */
-const BASE_W = 480, BASE_H = 720;        // logical game size
-const VERSION = "v12";                   // bump to bust cache on Pages
+const BASE_W = 480, BASE_H = 720;          // logical game size
+const VERSION = "v13";                      // bump to bust cache on Pages
 const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
 
-const BASE_SHIP_HEIGHT = 120;            // base ship height (auto-scales)
-const BASE_BEAN_W = 24, BASE_BEAN_H = 36;
+const BASE_SHIP_HEIGHT = 112;               // a touch smaller by default
+const BASE_BEAN_W = 22, BASE_BEAN_H = 34;   // slightly smaller too
 const ENEMY_BASE_W = 24, ENEMY_BASE_H = 20;
-const ENEMY_SCALE  = 1.5;
+const ENEMY_SCALE  = 1.45;
 const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 
 // Optional external images (leave "" to use built-in SVGs)
 const BEAN_IMG_SRC  = ""; // e.g. `./bean.png?${VERSION}`
 const ALIEN_IMG_SRC = ""; // e.g. `./alien.png?${VERSION}`
 
-/* ============== Canvas (HiDPI + Fit inc. controls) ============== */
+/* ============== Canvas (HiDPI + responsive) ============== */
 const c = document.getElementById('game');
 const g = c.getContext('2d');
-const controlsBar = document.getElementById('controls');
-const titleBar = document.querySelector('.titlebar');
+const touchControls = document.getElementById('touchControls');
+const startOverlay  = document.getElementById('startOverlay');
 
 let scaleCSS = 1;
 let dpr = 1;
+let SAFE_BOTTOM = 100; // logical px reserved for controls (auto-calculated)
 
-// Fit by BOTH width and height, subtracting the controls+title space so they never overlap the canvas.
+/** Fit canvas by both width & height, then reserve bottom area for in-canvas controls */
 function resizeCanvas(){
   const vw = window.innerWidth, vh = window.innerHeight;
-  const margin = 16; // page padding
-  const titleH = titleBar?.getBoundingClientRect().height || 0;
-  const ctrlH  = controlsBar?.getBoundingClientRect().height || 120;
-
+  const margin = 12;
   const availW = Math.max(320, vw - margin*2);
-  const availH = Math.max(360, vh - margin*2 - titleH - ctrlH);
+  const availH = Math.max(360, vh - margin*2);
 
+  // smaller by default on phones
   const scaleByW = availW / BASE_W;
   const scaleByH = availH / BASE_H;
-  const MIN_SCALE = 0.45, MAX_SCALE = 1.0;   // tweak if you want smaller/larger on tiny phones
+  const MIN_SCALE = 0.40, MAX_SCALE = 0.90; // <- overall smaller feel
   scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Math.min(scaleByW, scaleByH)));
 
-  // CSS size only; the controls are below, so no overlay ever happens.
+  // apply CSS size
   const cssW = Math.round(BASE_W * scaleCSS);
   const cssH = Math.round(BASE_H * scaleCSS);
   c.style.width  = cssW + 'px';
   c.style.height = cssH + 'px';
 
-  // HiDPI backing store for sharpness
+  // HiDPI backing store (draw in BASE_W×BASE_H units)
   dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
   c.width  = Math.round(BASE_W * dpr);
   c.height = Math.round(BASE_H * dpr);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // compute SAFE_BOTTOM from the *visual* controls height
+  const ctrlH_css = touchControls.getBoundingClientRect().height || 110; // in CSS px
+  SAFE_BOTTOM = Math.round((ctrlH_css / cssH) * BASE_H) + 8;             // convert to logical px + padding
 
   recalcSpriteSizes();
 }
@@ -116,7 +132,21 @@ addEventListener('keydown', e => {
 }, {passive:false});
 addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
-/* On-screen buttons */
+/* Start overlay click/key */
+function hideStart(){ startOverlay.classList.add('hidden'); }
+startOverlay.addEventListener('pointerdown', (e)=>{ e.preventDefault(); if (!S.running) { hideStart(); start(); } }, {passive:false});
+addEventListener('keydown', (e)=>{ if (!S.running) { hideStart(); start(); }});
+
+/* Canvas tap/hold shooting (optional too) */
+let touchActiveCanvas = false;
+c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.preventDefault(); }, { passive:false });
+['pointerup','pointercancel','pointerleave','pointerout'].forEach(ev =>
+  c.addEventListener(ev, () => { touchActiveCanvas = false; })
+);
+document.addEventListener('visibilitychange', () => { if (document.hidden) touchActiveCanvas = false; });
+addEventListener('blur', () => { touchActiveCanvas = false; });
+
+/* On-screen buttons (inside display) */
 const btnLeft  = document.getElementById('btnLeft');
 const btnRight = document.getElementById('btnRight');
 const btnFire  = document.getElementById('btnFire');
@@ -132,15 +162,6 @@ function bindHold(btn, setter){
 bindHold(btnLeft,  v=> leftPressed  = v);
 bindHold(btnRight, v=> rightPressed = v);
 bindHold(btnFire,  v=> firePressed  = v);
-
-/* Canvas tap/hold to fire (optional) */
-let touchActiveCanvas = false;
-c.addEventListener('pointerdown', (e) => { touchActiveCanvas = true; shoot(); e.preventDefault(); }, { passive:false });
-['pointerup','pointercancel','pointerleave','pointerout'].forEach(ev =>
-  c.addEventListener(ev, () => { touchActiveCanvas = false; })
-);
-document.addEventListener('visibilitychange', () => { if (document.hidden) touchActiveCanvas = false; });
-addEventListener('blur', () => { touchActiveCanvas = false; });
 
 /* ==================== Assets ==================== */
 const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
@@ -160,6 +181,7 @@ let alienReady = false; alienImg.onload = ()=> { alienReady = true; };
 /* ============== Dynamic sprite sizing ============== */
 let BEAN_W = BASE_BEAN_W, BEAN_H = BASE_BEAN_H;
 let ALIEN_W = Math.round(ENEMY_BASE_W * ENEMY_SCALE), ALIEN_H = Math.round(ENEMY_BASE_H * ENEMY_SCALE);
+
 function recalcSpriteSizes(){
   const targetH = Math.round(BASE_SHIP_HEIGHT * scaleCSS);
   const s = targetH / (shipNatural.h || BASE_SHIP_HEIGHT);
@@ -174,13 +196,14 @@ function recalcSpriteSizes(){
   ALIEN_W = Math.max(16, Math.round(alienBaseW * scaleCSS));
   ALIEN_H = Math.max(12, Math.round(alienBaseH * scaleCSS));
 
+  // keep player above the controls area
   S.player.w = shipW; S.player.h = shipH;
+  S.player.y = BASE_H - (SAFE_BOTTOM + S.player.h/2 + 8);
 }
 
 /* ==================== Game state ==================== */
 const beansEl = document.getElementById('beans');
 const livesEl = document.getElementById('lives');
-const restartBtn = document.getElementById('restart');
 
 const S = {
   running:false, beans:0, lives:3, tick:0,
@@ -191,14 +214,13 @@ const S = {
 
 function reset(){
   S.running = true; S.beans = 0; S.lives = 3; S.tick = 0;
-  S.player.x = BASE_W/2; S.player.y = BASE_H-80; S.player.cooldown = 0;
-  S.player.w = shipW; S.player.h = shipH;
+  S.player.x = BASE_W/2; S.player.cooldown = 0;
+  recalcSpriteSizes(); // also sets player.y above controls
   S.bullets.length = 0; S.enemies.length = 0;
   spawnWave();
   beansEl.textContent = S.beans; livesEl.textContent = S.lives;
-  restartBtn.hidden = true;
 }
-function endGame(){ S.running = false; restartBtn.hidden = false; }
+function endGame(){ S.running = false; startOverlay.classList.remove('hidden'); }
 
 /* ==================== Entities ==================== */
 function shoot(){
@@ -210,7 +232,7 @@ function spawnWave(){
   const gapX = Math.round(16 * scaleCSS), gapY = Math.round(14 * scaleCSS);
   const totalW = ENEMY_COLS * ALIEN_W + (ENEMY_COLS-1)*gapX;
   const startX = Math.max(10, (BASE_W - totalW)/2);
-  const startY = 80;
+  const startY = 70; // a touch higher for more space
   for (let r=0;r<ENEMY_ROWS;r++){
     for (let cc=0; cc<ENEMY_COLS; cc++){
       S.enemies.push({
@@ -296,20 +318,17 @@ function draw(){
     if (alienReady){ g.drawImage(alienImg, e.x, e.y, e.w, e.h); }
     else { g.fillStyle = "#7fffd4"; g.fillRect(e.x, e.y, e.w, e.h); }
   }
+
+  // (Optional) visualize safe bottom area:
+  // g.fillStyle = "rgba(255,255,255,.03)"; g.fillRect(0, BASE_H - SAFE_BOTTOM, BASE_W, SAFE_BOTTOM);
 }
 
 function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
 
 /* ==================== Boot ==================== */
 function start(){ reset(); loop(); }
-const kick = () => { if (!S.running) start(); };
-addEventListener('keydown', kick);
-c.addEventListener('pointerdown', kick);
-document.getElementById('restart').addEventListener('click', start);
-
-// First layout (twice so controls are measurable)
-resizeCanvas();
-setTimeout(resizeCanvas, 0);
+resizeCanvas();               // size once
+setTimeout(resizeCanvas, 0);  // size again after layout (controls measured)
 </script>
 </body>
 </html>
