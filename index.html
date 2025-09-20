@@ -15,22 +15,65 @@
   </style>
 </head>
 <body>
-  <div class="hud"><div>Score: <span id="score">0</span></div><div>Lives: <span id="lives">3</span></div></div>
+  <div class="hud"><div>Score: <span id="Beans of today">0</span></div><div>Lives: <span id="Nice Try!">3</span></div></div>
   <div id="wrap"><canvas id="game" width="480" height="720"></canvas></div>
   <button id="restart" class="btn" hidden>Tap/Click to Restart</button>
   <div class="tip">Move: ← → or A/D • Shoot: Space / Tap</div>
 
 <script>
 /* ================== CONFIG ================== */
-/* Ship image: upload a file named ship.png to the repo root (or change the path) */
+/* 1) Ship image (upload ship.png to repo root or change the path below) */
 const PLAYER_IMG_SRC = "./ship.png";
+/* Set the display height we want (aspect ratio preserved automatically) */
+const SHIP_TARGET_HEIGHT = 110; // make the can bigger by bumping this number
 
-/* Bean bullets:
-   - default uses a built-in SVG (no extra file needed)
-   - to use your own image, put bean.png in repo root and set BEAN_IMG_SRC = "./bean.png"
-*/
-const BEAN_IMG_SRC = ""; // set to "./bean.png" if you upload one
-const BEAN_SVG = `
+/* 2) Bean bullets (bigger) */
+const BEAN_IMG_SRC = ""; // set to "./bean.png" if you upload your own PNG
+const BEAN_W = 22, BEAN_H = 34; // bigger beans
+
+/* 3) Alien targets (built-in SVG; you can swap to ./alien.png if you prefer) */
+const ALIEN_IMG_SRC = ""; // set to "./alien.png" if you upload one
+const ALIEN_SVG = `
+<svg xmlns='http://www.w3.org/2000/svg' width='24' height='20' viewBox='0 0 24 20'>
+  <rect width='24' height='20' fill='none'/>
+  <rect x='2' y='4' width='4' height='2' fill='#7fffd4'/>
+  <rect x='18' y='4' width='4' height='2' fill='#7fffd4'/>
+  <rect x='4' y='6' width='16' height='6' fill='#7fffd4'/>
+  <rect x='6' y='12' width='4' height='2' fill='#7fffd4'/>
+  <rect x='14' y='12' width='4' height='2' fill='#7fffd4'/>
+  <rect x='8' y='8' width='2' height='2' fill='#001122'/>
+  <rect x='14' y='8' width='2' height='2' fill='#001122'/>
+</svg>`;
+const ENEMY_SCALE = 1.4;   // scale aliens up (bigger targets)
+const ENEMY_COLS  = 7;
+const ENEMY_ROWS  = 3;
+
+/* ============= setup & utilities ============ */
+const c = document.getElementById('game'), g = c.getContext('2d');
+const scoreEl = document.getElementById('score'), livesEl = document.getElementById('lives');
+const restartBtn = document.getElementById('restart');
+
+const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
+let keys = {};
+addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
+addEventListener('keyup',   e=> keys[e.key.toLowerCase()] = false);
+let pointerDown = false;
+addEventListener('pointerdown', ()=> { pointerDown = true; });
+addEventListener('pointerup',   ()=> { pointerDown = false; });
+
+/* ================ assets ==================== */
+const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
+let shipReady = false, shipW = 64, shipH = 64;
+shipImg.onload = () => {
+  shipReady = true;
+  // preserve aspect ratio using the image's intrinsic size
+  const scale = SHIP_TARGET_HEIGHT / (shipImg.naturalHeight || SHIP_TARGET_HEIGHT);
+  shipW = Math.round((shipImg.naturalWidth  || SHIP_TARGET_HEIGHT) * scale);
+  shipH = Math.round((shipImg.naturalHeight || SHIP_TARGET_HEIGHT) * scale);
+};
+
+const beanImg = new Image();
+const beanURL = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(`
 <svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
   <defs>
     <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
@@ -40,45 +83,26 @@ const BEAN_SVG = `
   </defs>
   <ellipse cx='16' cy='24' rx='10' ry='16' fill='url(#g)'/>
   <ellipse cx='12' cy='16' rx='4' ry='6' fill='rgba(255,255,255,0.25)'/>
-</svg>`;
-
-/* ============= setup & utilities ============ */
-const c = document.getElementById('game'), g = c.getContext('2d');
-const scoreEl = document.getElementById('score'), livesEl = document.getElementById('lives');
-const restartBtn = document.getElementById('restart');
-
-const rand = (a,b)=> a + Math.random()*(b-a);
-const clamp = (v,a,b)=> Math.max(a, Math.min(b,v));
-
-let keys = {};
-addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
-addEventListener('keyup',   e=> keys[e.key.toLowerCase()] = false);
-
-let pointerDown = false;
-addEventListener('pointerdown', ()=> { pointerDown = true; });
-addEventListener('pointerup',   ()=> { pointerDown = false; });
-
-/* ================ assets ==================== */
-const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
-let shipReady = false; shipImg.onload = ()=> shipReady = true;
-
-const beanImg = new Image();
-const beanURL = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(BEAN_SVG));
+</svg>`));
 beanImg.src = beanURL;
 let beanReady = false; beanImg.onload = ()=> beanReady = true;
 
-/* ============ HiDPI crispness (optional) ============ */
-(function scaleForDPR(){
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-  const w = c.width, h=c.height;
-  c.width = w*dpr; c.height = h*dpr; c.style.width = w+"px"; c.style.height = h+"px";
-  g.setTransform(dpr,0,0,dpr,0,0);
-})();
+const alienImg = new Image();
+const alienURL = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(ALIEN_SVG));
+alienImg.src = alienURL;
+let alienReady = false, alienW = 32, alienH = 26;
+alienImg.onload = () => {
+  alienReady = true;
+  alienW = Math.round((alienImg.naturalWidth  || 24) * ENEMY_SCALE);
+  alienH = Math.round((alienImg.naturalHeight || 20) * ENEMY_SCALE);
+  // if a wave already exists, resize current enemies
+  for (const e of S.enemies){ e.w = alienW; e.h = alienH; }
+};
 
 /* ================ game state ================ */
 const S = {
   running:false, score:0, lives:3, tick:0,
-  player: { x:c.width/2, y:680, w:56, h:56, speed:4.2, cooldown:0 },
+  player: { x:c.width/2, y:680, w:shipW, h:shipH, speed:4.2, cooldown:0 },
   bullets: [],
   enemies: [],
 };
@@ -86,125 +110,4 @@ const S = {
 function reset(){
   S.running = true; S.score = 0; S.lives = 3; S.tick = 0;
   S.player.x = c.width/2; S.player.y = 680; S.player.cooldown = 0;
-  S.bullets.length = 0; S.enemies.length = 0;
-  spawnWave();
-  scoreEl.textContent = S.score; livesEl.textContent = S.lives;
-  restartBtn.hidden = true;
-}
-function endGame(){ S.running = false; restartBtn.hidden = false; }
-
-/* ================ entities ================== */
-function shoot(){
-  if (S.player.cooldown > 0) return;
-  const bw = 14, bh = 22;
-  S.bullets.push({ x:S.player.x - bw/2, y:S.player.y - 34, vy:-8, w:bw, h:bh });
-  S.player.cooldown = 9; // frames
-}
-function spawnWave(){
-  // simple grid of enemies that drift L/R & slowly descend
-  const rows = 3, cols = 7, startX = 40, startY = 80, gapX = 56, gapY = 48;
-  for (let r=0;r<rows;r++){
-    for (let ccol=0; ccol<cols; ccol++){
-      S.enemies.push({
-        x: startX + ccol*gapX,
-        y: startY + r*gapY,
-        w: 32, h: 24, alive: true,
-        baseX: startX + ccol*gapX,
-        baseY: startY + r*gapY,
-      });
-    }
-  }
-}
-
-/* ================ collisions ================ */
-function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
-  return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
-}
-
-/* ================== loop ==================== */
-function update(){
-  S.tick++;
-
-  // input
-  const left = keys['arrowleft'] || keys['a'];
-  const right= keys['arrowright']|| keys['d'];
-  const shootKey = keys[' '] || keys['space'];
-  const move = (right?1:0) - (left?1:0);
-  S.player.x = clamp(S.player.x + move * S.player.speed, 24, c.width-24);
-
-  if (pointerDown) shoot();
-  if (shootKey) shoot();
-  if (S.player.cooldown>0) S.player.cooldown--;
-
-  // update bullets
-  for(const b of S.bullets){ b.y += b.vy; }
-  S.bullets = S.bullets.filter(b => b.y > -40);
-
-  // enemy swarm movement (sinusoidal L/R + gentle descent)
-  const amp = 20 + Math.min(S.tick/10, 40);
-  const speed = 0.5 + Math.min(S.tick/600, 1.2);
-  for (const e of S.enemies){
-    const phase = (e.baseX + e.baseY)*0.01;
-    e.x = e.baseX + Math.sin(S.tick*0.03 + phase)*amp;
-    e.y = e.baseY + Math.sin(S.tick*0.015 + phase*0.7)*4 + (S.tick*0.02*speed);
-    if (e.y + e.h >= S.player.y - 8) { S.lives = 0; livesEl.textContent = S.lives; endGame(); }
-  }
-
-  // bullet vs enemy
-  for (const b of S.bullets){
-    for (const e of S.enemies){
-      if (!e.alive) continue;
-      if (rectHit(b.x,b.y,b.w,b.h, e.x,e.y,e.w,e.h)){
-        e.alive = false; b.y = -9999;
-        S.score += 10; scoreEl.textContent = S.score;
-      }
-    }
-  }
-  S.enemies = S.enemies.filter(e => e.alive);
-
-  // next wave
-  if (S.enemies.length === 0) spawnWave();
-}
-
-function draw(){
-  g.clearRect(0,0,c.width,c.height);
-
-  // starfield
-  g.globalAlpha = .2; g.fillStyle = "#8fb3ff";
-  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%c.width, (i*97 + S.tick*0.9)%c.height, 2,2); }
-  g.globalAlpha = 1;
-
-  // ship (image) with fallback triangle if image hasn't loaded
-  const p = S.player;
-  if (shipReady){
-    g.drawImage(shipImg, p.x - p.w/2, p.y - p.h/2, p.w, p.h);
-  } else {
-    g.fillStyle = "#97e4ff";
-    g.beginPath(); g.moveTo(p.x, p.y-24); g.lineTo(p.x-20, p.y+22); g.lineTo(p.x+20, p.y+22); g.closePath(); g.fill();
-  }
-
-  // bean bullets (image) with fallback rectangles
-  for (const b of S.bullets){
-    if (beanReady){
-      g.drawImage(beanImg, b.x, b.y, b.w, b.h);
-    } else {
-      g.fillStyle = "#ffd166"; g.fillRect(b.x, b.y, b.w, b.h);
-    }
-  }
-
-  // enemies (simple rectangles)
-  g.fillStyle = "#ff7a7a";
-  for (const e of S.enemies){ g.fillRect(e.x, e.y, e.w, e.h); }
-}
-
-function loop(){ if (!S.running) return; update(); draw(); requestAnimationFrame(loop); }
-
-/* =============== boot =============== */
-function start(){ reset(); loop(); }
-const kick = () => { if (!S.running) start(); };
-addEventListener('keydown', kick);
-addEventListener('pointerdown', kick);
-restartBtn.addEventListener('click', ()=> { start(); });
-</script>
-</body>
-</html>
+  S.pl
