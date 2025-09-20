@@ -14,9 +14,9 @@
     main.layout{display:grid;grid-template-columns:1fr 240px;gap:16px;max-width:980px;margin:14px auto;padding:0 12px}
 
     /* Game area */
-    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:720px}
+    .gamewrap{position:relative;display:flex;align-items:center;justify-content:center;min-height:540px}
     #game{background:var(--card);border:2px solid var(--accent);border-radius:16px;
-      box-shadow:0 12px 30px rgba(0,0,0,.4); touch-action:none;} /* mobile fix */
+      box-shadow:0 12px 30px rgba(0,0,0,.4); touch-action:none;} /* mobile fix (canvas-only gestures) */
     .hud{position:absolute;top:10px;left:50%;transform:translateX(-50%);
       display:flex;gap:18px;font-weight:700;background:rgba(0,0,0,.18);padding:6px 10px;border-radius:999px}
     .btn{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:var(--accent);border:none;color:#fff;
@@ -66,31 +66,56 @@
 
 <script>
 /* ==================== CONFIG ==================== */
-const W = 480, H = 720;                    // logical canvas size (CSS pixels)
-const VERSION = "v6";                      // bump this when you deploy to bust cache
-const PLAYER_IMG_SRC = `./ship.png?${VERSION}`; // your ship (PNG/JPG)
-const SHIP_TARGET_HEIGHT = 120;            // bigger ship; aspect ratio preserved
+const BASE_W = 480, BASE_H = 720;        // logical game design size (do not change)
+const VERSION = "v7";                    // bump to bust caches on Pages
+const PLAYER_IMG_SRC = `./ship.png?${VERSION}`;
 
-// Bean bullets: built-in SVG by default; set to "./bean.png?${VERSION}" to use a file
-const BEAN_IMG_SRC = "";
-const BEAN_W = 24, BEAN_H = 36;            // bigger beans
-
-// Aliens: built-in SVG by default; set to "./alien.png?${VERSION}" to use a file
-const ALIEN_IMG_SRC = "";
-const ENEMY_SCALE = 1.5;                   // scale aliens
+const BASE_SHIP_HEIGHT = 120;            // base ship height (will scale on phones)
+const BASE_BEAN_W = 24, BASE_BEAN_H = 36;
+const ENEMY_BASE_W = 24, ENEMY_BASE_H = 20;
+const ENEMY_SCALE  = 1.5;
 const ENEMY_COLS = 7, ENEMY_ROWS = 3;
 
-/* ============== Canvas (HiDPI-safe) ============== */
+// Responsive scale limits (feel free to tweak)
+const MIN_SCALE = 0.65;  // smallest allowed relative size on tiny phones
+const MAX_SCALE = 1.00;  // never exceed original desktop size
+
+// Optional: external images (leave "" to use built-in SVGs)
+const BEAN_IMG_SRC  = ""; // e.g. `./bean.png?${VERSION}`
+const ALIEN_IMG_SRC = ""; // e.g. `./alien.png?${VERSION}`
+
+/* ============== Canvas (HiDPI + Responsive) ============== */
+// Render crisp on HiDPI and scale the *drawing resolution* to match CSS size.
+// Refs: devicePixelRatio & HiDPI canvas patterns. :contentReference[oaicite:3]{index=3}
 const c = document.getElementById('game');
 const g = c.getContext('2d');
-(function setupCanvasDPR(canvas, width, height){
-  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)); // cap at 2 for perf
-  canvas.width  = width  * dpr;
-  canvas.height = height * dpr;
-  canvas.style.width  = width + 'px';
-  canvas.style.height = height + 'px';
-  g.setTransform(dpr,0,0,dpr,0,0); // draw in CSS pixels
-})(c, W, H);
+
+let scaleCSS = 1;  // CSS size vs BASE_W/H (e.g., 0.7 on small phones)
+let dpr = 1;       // device pixel ratio (capped)
+function resizeCanvas(){
+  // Target CSS width: fit viewport minus padding; clamp between ~312 and 480
+  const containerPadding = 24;
+  const viewportW = Math.max(320, Math.min(window.innerWidth - containerPadding, BASE_W));
+  scaleCSS = Math.max(MIN_SCALE, Math.min(MAX_SCALE, viewportW / BASE_W));
+
+  // Maintain aspect ratio
+  const cssW = Math.round(BASE_W * scaleCSS);
+  const cssH = Math.round(BASE_H * scaleCSS);
+
+  // Backing store size = CSS * DPR (capped for perf)
+  dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));  // cap 2× for perf
+  const backingScale = dpr; // draw in CSS px; DPR handles sharpness
+
+  c.width  = Math.round(BASE_W * backingScale);
+  c.height = Math.round(BASE_H * backingScale);
+  c.style.width  = cssW + 'px';
+  c.style.height = cssH + 'px';
+  g.setTransform(backingScale, 0, 0, backingScale, 0, 0);
+
+  // Recompute sizes of sprites to match the CSS scale
+  recalcSpriteSizes();
+}
+window.addEventListener('resize', resizeCanvas);
 
 /* ==================== Inputs ==================== */
 const keys = {};
@@ -101,32 +126,25 @@ addEventListener('keydown', e => {
 addEventListener('keyup',   e => keys[e.key.toLowerCase()] = false);
 
 // --- Touch/pointer: canvas-only to avoid auto-firing on phones ---
+// Refs: pointerdown/up and touch-action. :contentReference[oaicite:4]{index=4}
 let touchActive = false;
-c.addEventListener('pointerdown', (e) => {
-  touchActive = true;
-  shoot();                // tap shoots once
-  e.preventDefault();
-}, { passive:false });
+c.addEventListener('pointerdown', (e) => { touchActive = true; shoot(); e.preventDefault(); }, { passive:false });
 ['pointerup','pointercancel','pointerleave'].forEach(ev =>
   c.addEventListener(ev, () => { touchActive = false; })
 );
-// Safety: if tab loses focus, stop firing
 document.addEventListener('visibilitychange', () => { if (document.hidden) touchActive = false; });
 window.addEventListener('blur', () => { touchActive = false; });
 
 /* ==================== Assets ==================== */
-// Ship (your image), keep aspect ratio using natural size
 const shipImg = new Image(); shipImg.src = PLAYER_IMG_SRC;
-let shipReady = false, shipW = 64, shipH = 64;
+let shipReady = false, shipW = 64, shipH = 64, shipNatural = {w:64,h:64};
 shipImg.onload = () => {
   shipReady = true;
-  const iw = shipImg.naturalWidth || 64, ih = shipImg.naturalHeight || 64;
-  const s  = SHIP_TARGET_HEIGHT / ih;  // uniform scale → preserves aspect ratio
-  shipW = Math.round(iw * s);
-  shipH = Math.round(ih * s);
+  shipNatural.w = shipImg.naturalWidth  || 64;
+  shipNatural.h = shipImg.naturalHeight || 64;
+  recalcSpriteSizes(); // recalc now that we know the real aspect
 };
 
-// Bean bullet image (inline SVG by default)
 const beanImg = new Image();
 const beanDataSVG = `
 <svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>
@@ -139,7 +157,6 @@ const beanDataSVG = `
 beanImg.src = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(beanDataSVG));
 let beanReady = false; beanImg.onload = ()=> beanReady = true;
 
-// Alien image (inline SVG by default)
 const alienImg = new Image();
 const alienSVG = `
 <svg xmlns='http://www.w3.org/2000/svg' width='24' height='20' viewBox='0 0 24 20'>
@@ -153,8 +170,48 @@ const alienSVG = `
   <rect x='14' y='8' width='2' height='2' fill='#001122'/>
 </svg>`;
 alienImg.src = ALIEN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(alienSVG));
-let alienReady = false, alienW = Math.round(24*ENEMY_SCALE), alienH = Math.round(20*ENEMY_SCALE);
-alienImg.onload = ()=> { alienReady = true; };
+let alienReady = false; alienImg.onload = ()=> { alienReady = true; };
+
+/* ============== Dynamic sprite sizing ============== */
+let BEAN_W = BASE_BEAN_W, BEAN_H = BASE_BEAN_H;
+let ALIEN_W = Math.round(ENEMY_BASE_W * ENEMY_SCALE), ALIEN_H = Math.round(ENEMY_BASE_H * ENEMY_SCALE);
+
+function recalcSpriteSizes(){
+  // Scale everything by the current CSS scale
+  const shipTargetH = Math.round(BASE_SHIP_HEIGHT * scaleCSS);
+  const s = shipTargetH / (shipNatural.h || BASE_SHIP_HEIGHT);
+  shipW = Math.max(24, Math.round((shipNatural.w || BASE_SHIP_HEIGHT) * s));
+  shipH = Math.max(24, Math.round((shipNatural.h || BASE_SHIP_HEIGHT) * s));
+
+  BEAN_W = Math.max(10, Math.round(BASE_BEAN_W * scaleCSS));
+  BEAN_H = Math.max(16, Math.round(BASE_BEAN_H * scaleCSS));
+
+  const alienBaseW = ENEMY_BASE_W * ENEMY_SCALE;
+  const alienBaseH = ENEMY_BASE_H * ENEMY_SCALE;
+  const oldW = ALIEN_W, oldH = ALIEN_H;
+  ALIEN_W = Math.max(16, Math.round(alienBaseW * scaleCSS));
+  ALIEN_H = Math.max(12, Math.round(alienBaseH * scaleCSS));
+
+  // Keep swarm centered when sizes change
+  if (S.enemies.length){
+    const oldCenterX = avg(S.enemies.map(e => e.baseX + e.w/2));
+    const oldAvgY    = avg(S.enemies.map(e => e.baseY));
+    const sx = ALIEN_W / Math.max(1, oldW), sy = ALIEN_H / Math.max(1, oldH);
+    const newCenterX = BASE_W / 2;
+    const anchorY    = 80; // top wave anchor
+
+    for (const e of S.enemies){
+      const cx = e.baseX + e.w/2;
+      const dy = e.baseY - anchorY;
+      e.baseX = (cx - oldCenterX) * sx + newCenterX - ALIEN_W/2;
+      e.baseY = anchorY + dy * sy;
+      e.w = ALIEN_W; e.h = ALIEN_H;
+    }
+  }
+
+  // Also update player’s current size
+  S.player.w = shipW; S.player.h = shipH;
+}
 
 /* ==================== Game state ==================== */
 const beansEl = document.getElementById('beans');
@@ -163,14 +220,14 @@ const restartBtn = document.getElementById('restart');
 
 const S = {
   running:false, beans:0, lives:3, tick:0,
-  player: { x:W/2, y:H-80, w:shipW, h:shipH, speed:4.2, cooldown:0 },
+  player: { x:BASE_W/2, y:BASE_H-80, w:shipW, h:shipH, speed:4.2, cooldown:0 },
   bullets: [],
   enemies: [],
 };
 
 function reset(){
   S.running = true; S.beans = 0; S.lives = 3; S.tick = 0;
-  S.player.x = W/2; S.player.y = H-80; S.player.cooldown = 0;
+  S.player.x = BASE_W/2; S.player.y = BASE_H-80; S.player.cooldown = 0;
   S.player.w = shipW; S.player.h = shipH;
   S.bullets.length = 0; S.enemies.length = 0;
   spawnWave();
@@ -179,6 +236,8 @@ function reset(){
 }
 function endGame(){ S.running = false; restartBtn.hidden = false; }
 
+function avg(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+
 /* ==================== Entities ==================== */
 function shoot(){
   if (S.player.cooldown > 0) return;
@@ -186,18 +245,18 @@ function shoot(){
   S.player.cooldown = 8;
 }
 function spawnWave(){
-  const gapX = 16, gapY = 14;
-  const totalW = ENEMY_COLS * alienW + (ENEMY_COLS-1)*gapX;
-  const startX = Math.max(10, (W - totalW)/2);
+  const gapX = Math.round(16 * scaleCSS), gapY = Math.round(14 * scaleCSS);
+  const totalW = ENEMY_COLS * ALIEN_W + (ENEMY_COLS-1)*gapX;
+  const startX = Math.max(10, (BASE_W - totalW)/2);
   const startY = 80;
   for (let r=0;r<ENEMY_ROWS;r++){
     for (let cc=0; cc<ENEMY_COLS; cc++){
       S.enemies.push({
-        x: startX + cc*(alienW + gapX),
-        y: startY + r*(alienH + gapY),
-        w: alienW, h: alienH, alive: true,
-        baseX: startX + cc*(alienW + gapX),
-        baseY: startY + r*(alienH + gapY),
+        x: startX + cc*(ALIEN_W + gapX),
+        y: startY + r*(ALIEN_H + gapY),
+        w: ALIEN_W, h: ALIEN_H, alive: true,
+        baseX: startX + cc*(ALIEN_W + gapX),
+        baseY: startY + r*(ALIEN_H + gapY),
       });
     }
   }
@@ -217,7 +276,7 @@ function update(){
   const right= keys['arrowright']|| keys['d'];
   const shootKey = keys[' '] || keys['space'];
   const move = (right?1:0) - (left?1:0);
-  S.player.x = Math.max(S.player.w/2, Math.min(W - S.player.w/2, S.player.x + move * S.player.speed));
+  S.player.x = Math.max(S.player.w/2, Math.min(BASE_W - S.player.w/2, S.player.x + move * S.player.speed));
 
   if (touchActive) shoot();
   if (shootKey) shoot();
@@ -253,11 +312,11 @@ function update(){
 }
 
 function draw(){
-  g.clearRect(0,0,W,H);
+  g.clearRect(0,0,BASE_W,BASE_H);
 
   // starfield
   g.globalAlpha = .2; g.fillStyle = "#8fb3ff";
-  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%W, (i*97 + S.tick*0.9)%H, 2,2); }
+  for (let i=0;i<60;i++){ g.fillRect((i*53 + (S.tick*0.6 % 53))%BASE_W, (i*97 + S.tick*0.9)%BASE_H, 2,2); }
   g.globalAlpha = 1;
 
   // ship
@@ -286,6 +345,9 @@ const kick = () => { if (!S.running) start(); };
 addEventListener('keydown', kick);
 c.addEventListener('pointerdown', kick); // start only from canvas for mobile sanity
 document.getElementById('restart').addEventListener('click', start);
+
+// Initial sizing & go
+resizeCanvas(); // set CSS scale & HiDPI transform
 </script>
 </body>
 </html>
