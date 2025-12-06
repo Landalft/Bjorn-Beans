@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Xmas Bean Blaster — mobile</title>
+<title>Christmas Bean Blaster — mobile</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   :root{
@@ -49,14 +49,16 @@
     z-index:3;
     letter-spacing:.4px;
     text-shadow:0 2px 4px rgba(0,0,0,.6);
+    font-size:clamp(14px, 3vw, 18px); /* responsive so it doesn’t collide */
   }
   .hud{
     position:absolute;
-    top:36px;
+    top:56px;                /* moved down a bit */
     left:50%;
     transform:translateX(-50%);
     display:flex;
-    gap:14px;
+    gap:10px;
+    flex-wrap:wrap;          /* allow Gifts / Lives to wrap on small screens */
     font-weight:700;
     background:rgba(15,23,42,.9);
     padding:6px 10px;
@@ -64,6 +66,7 @@
     z-index:3;
     box-shadow:0 4px 12px rgba(0,0,0,.6);
     border:1px solid rgba(248,250,252,.15);
+    font-size:13px;
   }
 
   /* Overlays */
@@ -216,7 +219,7 @@
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;                // logical game size
-const VERSION = "v21-xmas-lights-snow";          // bump to bust cache
+const VERSION = "v22-xmas-lights-snow-fix";      // cache bust
 
 /* Xmas ship + Navidad video */
 const PLAYER_IMG_FILE = "ship1.png";
@@ -357,7 +360,7 @@ shipImg.onload = () => {
 };
 
 const beanImg = new Image();
-/* 🎁 Present bullet (was bean) */
+/* 🎁 Present bullet */
 const beanSVG = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='48' viewBox='0 0 32 48'>\
 <rect x='6' y='10' width='20' height='26' rx='3.5' fill='#ef4444'/>\
 <rect x='15' y='8' width='4' height='30' fill='#facc15'/>\
@@ -368,7 +371,7 @@ beanImg.src = BEAN_IMG_SRC || ('data:image/svg+xml;utf8,' + encodeURIComponent(b
 let beanReady = false; beanImg.onload = ()=> beanReady = true;
 
 const alienImg = new Image();
-/* ⛄ Snowman enemy (was alien) */
+/* ⛄ Snowman enemy */
 const alienSVG = "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'>\
 <rect width='24' height='24' fill='none'/>\
 <circle cx='12' cy='9' r='4' fill='#e5e7eb'/>\
@@ -409,7 +412,7 @@ function recalcSpriteSizes(){
   S.player.y = BASE_H - (SAFE_BOTTOM + S.player.h/2 + 8);
 }
 
-/* ============== Snow init ============== */
+/* ============== Snow init & background helpers ============== */
 function initSnow(){
   snow.length = 0;
   for (let i = 0; i < SNOW_COUNT; i++){
@@ -419,6 +422,72 @@ function initSnow(){
       r: 1.2 + Math.random()*2.2,
       vy: 0.5 + Math.random()*1.3
     });
+  }
+}
+
+function updateSnow(){
+  for (const flake of snow){
+    flake.y += flake.vy;
+    flake.x += Math.sin((flake.y + S.tick*0.4) * 0.01) * 0.2;
+    if (flake.y > BASE_H){
+      flake.y = -5;
+      flake.x = Math.random()*BASE_W;
+    }
+  }
+}
+
+function drawBackground(){
+  // gradient sky
+  const grad = g.createLinearGradient(0,0,0,BASE_H);
+  grad.addColorStop(0,"#020617");
+  grad.addColorStop(0.4,"#020617");
+  grad.addColorStop(1,"#020617");
+  g.fillStyle = grad;
+  g.fillRect(0,0,BASE_W,BASE_H);
+
+  // soft snowy ground at bottom
+  g.fillStyle = "rgba(248,250,252,0.9)";
+  g.beginPath();
+  const groundY = BASE_H - SAFE_BOTTOM + 40;
+  g.moveTo(0, groundY);
+  g.quadraticCurveTo(BASE_W*0.25, groundY-12, BASE_W*0.5, groundY-4);
+  g.quadraticCurveTo(BASE_W*0.75, groundY+6, BASE_W, groundY-2);
+  g.lineTo(BASE_W, BASE_H);
+  g.lineTo(0, BASE_H);
+  g.closePath();
+  g.fill();
+
+  // falling snowflakes
+  g.globalAlpha = 0.95;
+  g.fillStyle = "#e5e7eb";
+  for (const flake of snow){
+    g.beginPath();
+    g.arc(flake.x, flake.y, flake.r, 0, Math.PI*2);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+function drawLights(){
+  const colors = ["#f97316","#22c55e","#facc15","#60a5fa","#fb7185"];
+  const count = 24;
+  const y = SAFE_TOP - 10;
+  const phase = Math.floor(S.tick / 15);
+
+  for (let i=0;i<count;i++){
+    const x = (i+0.5) * (BASE_W / count);
+    const color = colors[(i+phase)%colors.length];
+    g.fillStyle = color;
+    g.beginPath();
+    g.arc(x, y, 3.3, 0, Math.PI*2);
+    g.fill();
+
+    // little glow
+    g.globalAlpha = 0.35;
+    g.beginPath();
+    g.arc(x, y, 7, 0, Math.PI*2);
+    g.fill();
+    g.globalAlpha = 1;
   }
 }
 
@@ -496,73 +565,6 @@ function spawnWave(){
 /* ==================== Collisions ==================== */
 function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
   return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
-}
-
-/* ==================== Background helpers ==================== */
-function updateSnow(){
-  for (const flake of snow){
-    flake.y += flake.vy;
-    flake.x += Math.sin((flake.y + S.tick*0.4) * 0.01) * 0.2;
-    if (flake.y > BASE_H){
-      flake.y = -5;
-      flake.x = Math.random()*BASE_W;
-    }
-  }
-}
-
-function drawBackground(){
-  // gradient sky
-  const grad = g.createLinearGradient(0,0,0,BASE_H);
-  grad.addColorStop(0,"#020617");
-  grad.addColorStop(0.4,"#020617");
-  grad.addColorStop(1,"#020617");
-  g.fillStyle = grad;
-  g.fillRect(0,0,BASE_W,BASE_H);
-
-  // soft snowy ground at bottom
-  g.fillStyle = "rgba(248,250,252,0.9)";
-  g.beginPath();
-  const groundY = BASE_H - SAFE_BOTTOM + 40;
-  g.moveTo(0, groundY);
-  g.quadraticCurveTo(BASE_W*0.25, groundY-12, BASE_W*0.5, groundY-4);
-  g.quadraticCurveTo(BASE_W*0.75, groundY+6, BASE_W, groundY-2);
-  g.lineTo(BASE_W, BASE_H);
-  g.lineTo(0, BASE_H);
-  g.closePath();
-  g.fill();
-
-  // falling snowflakes
-  g.globalAlpha = 0.95;
-  g.fillStyle = "#e5e7eb";
-  for (const flake of snow){
-    g.beginPath();
-    g.arc(flake.x, flake.y, flake.r, 0, Math.PI*2);
-    g.fill();
-  }
-  g.globalAlpha = 1;
-}
-
-function drawLights(){
-  const colors = ["#f97316","#22c55e","#facc15","#60a5fa","#fb7185"];
-  const count = 24;
-  const y = SAFE_TOP - 10;
-  const phase = Math.floor(S.tick / 15);
-
-  for (let i=0;i<count;i++){
-    const x = (i+0.5) * (BASE_W / count);
-    const color = colors[(i+phase)%colors.length];
-    g.fillStyle = color;
-    g.beginPath();
-    g.arc(x, y, 3.3, 0, Math.PI*2);
-    g.fill();
-
-    // little glow
-    g.globalAlpha = 0.35;
-    g.beginPath();
-    g.arc(x, y, 7, 0, Math.PI*2);
-    g.fill();
-    g.globalAlpha = 1;
-  }
 }
 
 /* ==================== Loop ==================== */
@@ -673,4 +675,3 @@ playAgainBtn.addEventListener('click', () => {
 </script>
 </body>
 </html>
-
