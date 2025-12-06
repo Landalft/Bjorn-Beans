@@ -104,12 +104,12 @@
     gap:10px;
     align-items:center;
   }
-  .winbox img{
+  .winbox video{
     max-width:88%;
     max-height:48vh;
-    height:auto;
     border-radius:12px;
     display:block;
+    background:#000;
   }
   .winbox figcaption{
     font-weight:800;
@@ -187,11 +187,11 @@
         <div class="pill">Tap to start delivering gifts 🎁</div>
       </div>
 
-      <!-- Win overlay (GIF + footer + play again) -->
+      <!-- Win overlay (VIDEO + footer + play again) -->
       <div id="winOverlay" class="overlay hidden" aria-live="polite">
         <div class="overlay-bg"></div>
         <figure class="winbox">
-          <img id="winGif" src="" alt="Well done animation" />
+          <video id="winVideo" playsinline muted autoplay controls></video>
           <figcaption>Merry Christmas!! 🎄</figcaption>
           <button id="playAgain" class="btn">Play again</button>
         </figure>
@@ -213,11 +213,15 @@
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;                // logical game size
-const VERSION = "v19-xmas-smallbump";            // bump to bust cache
-const PLAYER_IMG_FILE = "ship.png";              // same as before
-const WIN_GIF_FILE    = "beans.gif";             // same as before
+const VERSION = "v20-xmas-video";                // bump to bust cache
+
+/* NEW: use ship1.png */
+const PLAYER_IMG_FILE = "ship1.png";
 const PLAYER_IMG_SRC  = `./${PLAYER_IMG_FILE}?v=${VERSION}`;
-const WIN_GIF_BASE    = `./${WIN_GIF_FILE}?v=${VERSION}`; // timestamp added on win to replay
+
+/* NEW: Navidad.mp4 as win video */
+const WIN_VIDEO_FILE = "Navidad.mp4";
+const WIN_VIDEO_SRC  = `./${WIN_VIDEO_FILE}?v=${VERSION}`;
 
 const BASE_SHIP_HEIGHT = 108;
 
@@ -240,7 +244,7 @@ const g = c.getContext('2d');
 const touchControls = document.getElementById('touchControls');
 const startOverlay  = document.getElementById('startOverlay');
 const winOverlay    = document.getElementById('winOverlay');
-const winGifEl      = document.getElementById('winGif');
+const winVideoEl    = document.getElementById('winVideo');
 const playAgainBtn  = document.getElementById('playAgain');
 
 const titleEl = document.querySelector('.titlebar');
@@ -419,7 +423,11 @@ function reset(){
   beansEl.textContent = S.beans;
   livesEl.textContent = S.lives;
   winOverlay.classList.add('hidden');
+  // stop video if it was playing
+  winVideoEl.pause();
 }
+
+/* Lose immediately if enemies touch player row */
 function endGame(){
   S.running = false;
   startOverlay.classList.remove('hidden');
@@ -428,10 +436,13 @@ function endGame(){
 /* Show "win" overlay (after clearing all aliens) */
 function showWin(){
   S.running = false;
-  winGifEl.style.display = '';
-  winGifEl.src = WIN_GIF_BASE + "&t=" + Date.now();
-  winGifEl.onerror = () => { winGifEl.style.display = 'none'; };
+  // reset and play Navidad video
+  winVideoEl.pause();
+  winVideoEl.currentTime = 0;
+  winVideoEl.src = WIN_VIDEO_SRC + "&t=" + Date.now();
   winOverlay.classList.remove('hidden');
+  // try autoplay (may stay paused if browser blocks)
+  winVideoEl.play().catch(() => {});
 }
 
 /* ==================== Entities ==================== */
@@ -587,9 +598,6 @@ playAgainBtn.addEventListener('click', () => {
   winOverlay.classList.add('hidden');
   start();
 });
-
-// Preload GIF once (helps on slow networks)
-winGifEl.src = WIN_GIF_BASE;
 </script>
 </body>
 </html>
