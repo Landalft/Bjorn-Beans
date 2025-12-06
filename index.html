@@ -49,14 +49,16 @@
     z-index:3;
     letter-spacing:.4px;
     text-shadow:0 2px 4px rgba(0,0,0,.6);
+    font-size:clamp(14px, 3vw, 18px); /* responsive so it doesn’t collide */
   }
   .hud{
     position:absolute;
-    top:36px;
+    top:56px;                /* moved down a bit */
     left:50%;
     transform:translateX(-50%);
     display:flex;
-    gap:14px;
+    gap:10px;
+    flex-wrap:wrap;          /* allow Gifts / Lives to wrap on small screens */
     font-weight:700;
     background:rgba(15,23,42,.9);
     padding:6px 10px;
@@ -64,6 +66,7 @@
     z-index:3;
     box-shadow:0 4px 12px rgba(0,0,0,.6);
     border:1px solid rgba(248,250,252,.15);
+    font-size:13px;
   }
 
   /* Overlays */
@@ -216,7 +219,7 @@
 <script>
 /* ==================== CONFIG ==================== */
 const BASE_W = 480, BASE_H = 720;                // logical game size
-const VERSION = "v21-xmas-lights-snow";          // bump to bust cache
+const VERSION = "v21-xmas-lights-snow";          // cache bust
 
 /* Xmas ship + Navidad video */
 const PLAYER_IMG_FILE = "ship1.png";
@@ -410,6 +413,7 @@ function recalcSpriteSizes(){
 }
 
 /* ============== Snow init ============== */
+const SNOW_COUNT = 70;
 function initSnow(){
   snow.length = 0;
   for (let i = 0; i < SNOW_COUNT; i++){
@@ -499,6 +503,8 @@ function rectHit(ax,ay,aw,ah,bx,by,bw,bh){
 }
 
 /* ==================== Background helpers ==================== */
+const snow = []; // {x,y,r,vy}
+
 function updateSnow(){
   for (const flake of snow){
     flake.y += flake.vy;
